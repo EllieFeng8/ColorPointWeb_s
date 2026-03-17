@@ -1,0 +1,5 @@
+{
+  "name": "Spectrometer Data Analysis Pro",
+  "description": "A professional tool for spectrometer data analysis, featuring file import, preprocessing, model building, and evaluation.",
+  "requestFramePermissions": []
+}
