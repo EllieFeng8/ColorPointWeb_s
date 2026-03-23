@@ -4,16 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import {
-    Database,
-    BarChart3,
-    ArrowRight,
-    User
-} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import NavBar from '../components/NavBar.jsx';
+import Footer from '../components/Footer.jsx';
 import Loading from '../components/Loading.jsx';
-import logoAeyeot from "@/src/image/onlyLogoW_big 3.png";
 
 export default function ModelSet() {
     const [activeTab, setActiveTab] = useState('regression');
@@ -28,39 +22,13 @@ export default function ModelSet() {
 
     return (
         <div className="flex h-screen overflow-hidden font-display">
-            <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
-                <div className="p-8">
-                    <div className="flex items-center gap-3 mb-10">
-                        <div className="w-10 h-10 rounded-xl bg-[#82b091] flex items-center justify-center shadow-lg shadow-[#82b091]/30 overflow-hidden">
-                            <img src={logoAeyeot} alt="AEYEOT" className="w-7 h-7 object-contain" />
-                        </div>
-                        <div>
-                            <h1 className="text-[24px] font-extrabold tracking-widest uppercase text-[#659475]">AEYEOT</h1>
-                            {/*<p className="text-[10px] text-[#659475] font-bold">DATA ANALYSIS PRO</p>*/}
-                        </div>
-                    </div>
-
-                    <NavBar />
-                </div>
-
-                <div className="mt-auto p-8 border-t border-slate-100">
-                    <div className="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-50">
-                        <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                            <User size={20} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-[#111827] truncate">Lab Technician 01</p>
-                            <p className="text-[10px] text-slate-400 truncate">lab-01@inst.edu</p>
-                        </div>
-                    </div>
-                </div>
-            </aside>
+            <NavBar />
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 bg-white">
 
                 {/* Main Scrollable Area */}
-                <main className="flex-1 overflow-y-auto custom-scrollbar">
+                <main className="flex-1 overflow-y-auto custom-scrollbar pb-32">
                     <div className="p-8 max-w-[1440px] mx-auto">
                         <header className="flex justify-between items-start mb-12">
                         <div className="space-y-2">
@@ -265,31 +233,12 @@ export default function ModelSet() {
                     </div>
                 </main>
 
-                {/* Footer */}
-                <footer className="h-16 border-t border-slate-200 bg-white flex items-center justify-between px-8">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2">
-                            <span className="size-2 bg-[#659475] rounded-full"></span>
-                            <span className="text-[11px] text-slate-500 font-medium uppercase tracking-wider">系統狀態: 運行中</span>
-                        </div>
-                        <div className="flex items-center gap-2 border-l border-slate-100 pl-6">
-                            <Database size={14} className="text-slate-400" />
-                            <span className="text-[11px] text-slate-500 font-medium">1,240 Samples Loaded</span>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-
-                        <div className="h-4 w-px bg-slate-100"></div>
-
-                        <button
-                            onClick={() => setShowLoading(true)}
-                            className="ml-4 px-8 py-2 text-sm font-bold bg-[#659475] text-white rounded-lg hover:bg-[#547c61] transition-all shadow-sm flex items-center gap-2"
-                        >
-                            下一步
-                            <ArrowRight size={16} />
-                        </button>
-                    </div>
-                </footer>
+                <Footer
+                    primaryLabel="下一步:評估分析"
+                    onPrimaryClick={() => setShowLoading(true)}
+                    secondaryLabel="上一步"
+                    secondaryTo="/preprocessing"
+                />
             </div>
             <Loading open={showLoading} onClose={() => setShowLoading(false)} />
         </div>

@@ -1,58 +1,111 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {BarChart3, FileText, User, CloudUpload, Trash2, CheckCircle2, Info} from 'lucide-react';
-import Header from '../components/Header.jsx';
+import { FileText, CloudUpload, Trash2, CheckCircle2 } from 'lucide-react';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
-import logoAeyeot from "@/src/image/onlyLogoW_big 3.png";
+
+const initialFiles = [];
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatUploadTime(timestamp) {
+  return new Intl.DateTimeFormat('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date(timestamp));
+}
+
+function mapFilesToRows(fileList) {
+  return Array.from(fileList).map((file) => ({
+    id: `${file.name}-${file.lastModified}-${file.size}`,
+    name: file.name,
+    size: formatFileSize(file.size),
+    uploadTime: formatUploadTime(file.lastModified || Date.now()),
+    samples: '--',
+    range: '待分析'
+  }));
+}
 
 export default function Home() {
-  const [files, setFiles] = useState([
-    {
-      id: '1',
-      name: 'sample_spectrum_01.csv',
-      size: '2.4 MB',
-      uploadTime: '2023-10-27 10:30',
-      samples: 120,
-      range: '400 - 2500 nm'
-    }
-  ]);
+  const [files, setFiles] = useState(initialFiles);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const addFiles = (fileList) => {
+    const nextFiles = mapFilesToRows(fileList);
+
+    setFiles((prevFiles) => {
+      const existingIds = new Set(prevFiles.map((file) => file.id));
+      return [...prevFiles, ...nextFiles.filter((file) => !existingIds.has(file.id))];
+    });
+  };
 
   const removeFile = (id) => {
-    setFiles(files.filter((f) => f.id !== id));
+    setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+  };
+
+  const resetForm = () => {
+    setFiles([]);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event) => {
+    const { files: selectedFiles } = event.target;
+    if (!selectedFiles || selectedFiles.length === 0) {
+      return;
+    }
+
+    addFiles(selectedFiles);
+    event.target.value = '';
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (event) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setIsDragging(false);
+
+    const droppedFiles = event.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) {
+      return;
+    }
+
+    addFiles(droppedFiles);
   };
 
   return (
     <div className="flex h-screen overflow-hidden font-display">
-      <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
-        <div className="p-8">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-[#82b091] flex items-center justify-center shadow-lg shadow-[#82b091]/30 overflow-hidden">
-              <img src={logoAeyeot} alt="AEYEOT" className="w-7 h-7 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-[24px] font-extrabold tracking-widest uppercase text-[#659475]">AEYEOT</h1>
-              {/*<p className="text-[10px] text-[#659475] font-bold">DATA ANALYSIS PRO</p>*/}
-            </div>
-          </div>
+      <NavBar />
 
-          <NavBar />
-        </div>
-
-        <div className="mt-auto p-8 border-t border-slate-100">
-          <div className="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-50">
-            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-              <User size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-[#111827] truncate">Lab Technician 01</p>
-              <p className="text-[10px] text-slate-400 truncate">lab-01@inst.edu</p>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <main className="flex-1 overflow-y-auto p-12 bg-white">
+      <main className="flex-1 overflow-y-auto bg-white px-12 pt-12 pb-32">
         <div className="max-w-6xl mx-auto space-y-12">
           <header className="flex justify-between items-start">
             <div className="space-y-2">
@@ -72,16 +125,28 @@ export default function Home() {
                 請上傳或拖放您的光譜數據檔案（支持 .csv, .spc, .jdx 格式）
               </motion.p>
             </div>
-            <div className="flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full bg-[#82b091]/10 text-[#659475] border border-[#82b091]/20">
-              <Info size={14} />
-              STEP 1 OF 4: DATA ACQUISITION
-            </div>
           </header>
 
           <section>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".csv,.spc,.jdx"
+              className="hidden"
+              onChange={handleFileChange}
+            />
             <motion.div
               whileHover={{ scale: 1.005 }}
-              className="group relative flex flex-col items-center justify-center border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-2xl px-6 py-20 hover:border-[#82b091] hover:bg-[#82b091]/5 transition-all cursor-pointer"
+              onClick={openFilePicker}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-20 transition-all cursor-pointer ${
+                isDragging
+                  ? 'border-[#82b091] bg-[#82b091]/10'
+                  : 'border-slate-200 bg-slate-50/50 hover:border-[#82b091] hover:bg-[#82b091]/5'
+              }`}
             >
               <div className="relative flex flex-col items-center text-center space-y-6">
                 <div className="w-20 h-20 rounded-full bg-white flex items-center justify-center text-[#82b091] shadow-sm border border-slate-100 group-hover:scale-110 transition-transform">
@@ -91,7 +156,14 @@ export default function Home() {
                   <h3 className="text-xl font-bold text-[#111827]">拖放檔案至此處</h3>
                   <p className="text-slate-400">或點擊按鈕從您的電腦選取檔案</p>
                 </div>
-                <button className="bg-[#82b091] hover:bg-[#659475] text-white px-10 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#82b091]/25 transition-all active:scale-95">
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openFilePicker();
+                  }}
+                  className="bg-[#82b091] hover:bg-[#659475] text-white px-10 py-3 rounded-xl text-sm font-bold shadow-lg shadow-[#82b091]/25 transition-all active:scale-95"
+                >
                   選擇檔案
                 </button>
               </div>
@@ -179,7 +251,12 @@ export default function Home() {
             </div>
           </section>
 
-          <Footer />
+          <Footer
+            primaryLabel="下一步：前處理"
+            primaryTo="/preprocessing"
+            secondaryLabel="取消"
+            onSecondaryClick={resetForm}
+          />
         </div>
       </main>
     </div>

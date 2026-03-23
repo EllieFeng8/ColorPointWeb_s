@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Download, Tag, Info, History, ExternalLink } from 'lucide-react';
+import { Download, Tag, Info, History, ExternalLink } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -17,7 +17,7 @@ import { motion } from 'motion/react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import NavBar from '@/src/components/NavBar.jsx';
-import logoAeyeot from '@/src/image/onlyLogoW_big 3.png';
+import Header from "@/src/components/Header.jsx";
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -44,6 +44,80 @@ const testingData = [
   { x: 96, y: 80 },
 ];
 
+function toCsv(rows) {
+  return rows
+    .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+}
+
+function downloadCsv(filename, rows) {
+  const csvContent = `\uFEFF${toCsv(rows)}`;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function saveCsv(filename, rows) {
+  const csvContent = `\uFEFF${toCsv(rows)}`;
+
+  if ('showSaveFilePicker' in window) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types: [
+        {
+          description: 'CSV Files',
+          accept: {
+            'text/csv': ['.csv']
+          }
+        }
+      ]
+    });
+
+    const writable = await handle.createWritable();
+    await writable.write(csvContent);
+    await writable.close();
+    return;
+  }
+
+  downloadCsv(filename, rows);
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+async function saveFile(filename, content, mimeType, types) {
+  if ('showSaveFilePicker' in window) {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: filename,
+      types
+    });
+
+    const writable = await handle.createWritable();
+    await writable.write(content);
+    await writable.close();
+    return;
+  }
+
+  downloadFile(filename, content, mimeType);
+}
+
 const SidebarItem = ({ icon: Icon, label, active = false }) => (
   <a
     href="#"
@@ -69,36 +143,83 @@ const MetricCard = ({ label, value, isPrimary = false }) => (
 export default function EvaluatioClassify() {
   const [fileName, setFileName] = useState('Spectro_Model_Alpha');
   const [version, setVersion] = useState('v2.1.0');
+  const [notes, setNotes] = useState('');
+
+  const handleTrainingExport = async () => {
+    const rows = [
+      ['sample', 'value'],
+      ...trainingData.map(({ name, value }) => [name, value])
+    ];
+
+    try {
+      await saveCsv('training-results.csv', rows);
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        downloadCsv('training-results.csv', rows);
+      }
+    }
+  };
+
+  const handleTestingExport = async () => {
+    const rows = [
+      ['predicted', 'actual'],
+      ...testingData.map(({ x, y }) => [x, y])
+    ];
+
+    try {
+      await saveCsv('testing-results.csv', rows);
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        downloadCsv('testing-results.csv', rows);
+      }
+    }
+  };
+
+  const handleModelExport = async () => {
+    const exportPayload = {
+      fileName,
+      version,
+      notes,
+      metrics: {
+        training: {
+          r2: 0.985,
+          rmse: 0.042,
+          rpd: 5.24
+        },
+        testing: {
+          r2: 0.942,
+          rmse: 0.058,
+          rpd: 4.18
+        }
+      },
+      trainingData,
+      testingData,
+      exportedAt: new Date().toISOString()
+    };
+
+    const content = JSON.stringify(exportPayload, null, 2);
+    const safeName = (fileName || 'model-export').trim().replace(/[\\/:*?"<>|]/g, '_');
+    const filename = `${safeName || 'model-export'}-${version || 'v1.0.0'}.json`;
+
+    try {
+      await saveFile(filename, content, 'application/json;charset=utf-8;', [
+        {
+          description: 'JSON Files',
+          accept: {
+            'application/json': ['.json']
+          }
+        }
+      ]);
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        downloadFile(filename, content, 'application/json;charset=utf-8;');
+      }
+    }
+  };
 
   return (
     <div className="flex min-h-screen bg-background-light">
-      <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
-        <div className="p-8">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="w-10 h-10 rounded-xl bg-[#82b091] flex items-center justify-center shadow-lg shadow-[#82b091]/30 overflow-hidden">
-              <img src={logoAeyeot} alt="AEYEOT" className="w-7 h-7 object-contain" />
-            </div>
-            <div>
-              <h1 className="text-[24px] font-extrabold tracking-widest uppercase text-[#659475]">AEYEOT</h1>
-              {/*<p className="text-[10px] text-[#659475] font-bold">DATA ANALYSIS PRO</p>*/}
-            </div>
-          </div>
-
-          <NavBar />
-        </div>
-
-        <div className="mt-auto p-8 border-t border-slate-100">
-          <div className="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-50">
-            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-              <User size={20} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-[#111827] truncate">Lab Technician 01</p>
-              <p className="text-[10px] text-slate-400 truncate">lab-01@inst.edu</p>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <NavBar />
 
       <div className="flex-1 flex flex-col min-w-0 bg-white">
         <main className="flex-1 overflow-y-auto custom-scrollbar">
@@ -135,7 +256,11 @@ export default function EvaluatioClassify() {
                     <h3 className="font-bold text-slate-800">訓練結果 (Training Results)</h3>
                     <p className="text-[11px] font-bold text-slate-400 mt-1">樣本總數: 1,240</p>
                   </div>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-bold transition-colors border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={handleTrainingExport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-bold transition-colors border border-slate-200"
+                  >
                     <Download className="size-3.5" />
                     CSV 匯出
                   </button>
@@ -178,7 +303,11 @@ export default function EvaluatioClassify() {
                     <h3 className="font-bold text-slate-800">測試結果 (Testing Results)</h3>
                     <p className="text-[11px] font-bold text-slate-400 mt-1">獨立驗證集: 310</p>
                   </div>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-bold transition-colors border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={handleTestingExport}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-bold transition-colors border border-slate-200"
+                  >
                     <Download className="size-3.5" />
                     CSV 匯出
                   </button>
@@ -226,7 +355,13 @@ export default function EvaluatioClassify() {
                   </p>
                 </div>
 
-                <form className="flex-1 flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+                <form
+                  className="flex-1 flex flex-col gap-4"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleModelExport();
+                  }}
+                >
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                       文件名字 (File Name)
@@ -259,6 +394,8 @@ export default function EvaluatioClassify() {
                       備註 (Notes)
                     </label>
                     <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
                       placeholder="描述模型的主要更動與測試條件..."
                       className="w-full h-32 bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:ring-1 focus:ring-primary focus:border-primary resize-none outline-none transition-all"
                     />
@@ -275,7 +412,7 @@ export default function EvaluatioClassify() {
               </motion.div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-4 mt-6">
+            <div className="grid grid-cols-1 gap-6 pb-4 mt-6">
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -293,25 +430,7 @@ export default function EvaluatioClassify() {
                 </div>
               </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.5 }}
-                className="p-6 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-sm"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="p-2 bg-slate-100 rounded-lg text-slate-400">
-                    <History className="size-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-slate-700 text-sm uppercase tracking-tight">最近匯出歷史</h4>
-                    <p className="text-[11px] text-slate-400 font-medium">上次匯出於 2023-11-20 14:30</p>
-                  </div>
-                </div>
-                <button className="text-[11px] font-bold text-primary hover:underline uppercase tracking-widest">
-                  查看全部
-                </button>
-              </motion.div>
+
             </div>
           </div>
         </main>

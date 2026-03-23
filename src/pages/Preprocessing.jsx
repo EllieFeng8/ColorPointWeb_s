@@ -5,14 +5,8 @@
 
 import React, { useState } from 'react';
 import {
-  Database,
-  Waves,
-  Cpu,
   LineChart,
-  FileText,
-  LogOut,
   ChevronRight,
-  Bell,
   RotateCcw,
   Zap,
   FolderOpen,
@@ -20,12 +14,11 @@ import {
   Filter,
   Search,
   LayoutGrid,
-  Download,
-  CheckCircle2, BarChart3, User
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import NavBar from "@/src/components/NavBar.jsx";
-import logoAeyeot from "@/src/image/onlyLogoW_big 3.png";
+import Footer from "@/src/components/Footer.jsx";
 
 const Toggle = ({ checked, onChange }) => (
     <button
@@ -51,40 +44,13 @@ export default function Preprocessing() {
 
   return (
       <div className="h-screen flex overflow-hidden font-display">
-        {/* Sidebar */}
-        <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
-          <div className="p-8">
-            <div className="flex items-center gap-3 mb-10">
-              <div className="w-10 h-10 rounded-xl bg-[#82b091] flex items-center justify-center shadow-lg shadow-[#82b091]/30 overflow-hidden">
-                <img src={logoAeyeot} alt="AEYEOT" className="w-7 h-7 object-contain" />
-              </div>
-              <div>
-                <h1 className="text-[24px] font-extrabold tracking-widest uppercase text-[#659475]">AEYEOT</h1>
-                {/*<p className="text-[10px] text-[#659475] font-bold">DATA ANALYSIS PRO</p>*/}
-              </div>
-            </div>
-
-            <NavBar />
-          </div>
-
-          <div className="mt-auto p-8 border-t border-slate-100">
-            <div className="flex items-center gap-3 bg-white p-3 rounded-xl shadow-sm border border-slate-50">
-              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                <User size={20} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-[#111827] truncate">Lab Technician 01</p>
-                <p className="text-[10px] text-slate-400 truncate">lab-01@inst.edu</p>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <NavBar />
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0">
 
           {/* Content Area */}
-          <main className="flex-1 overflow-y-auto p-12 bg-white">
+          <main className="flex-1 overflow-y-auto bg-white px-12 pt-12 pb-32">
             <div className="flex justify-between items-end ">
               <header className="flex justify-between items-start mb-12">
                 <div className="space-y-2">
@@ -331,22 +297,12 @@ export default function Preprocessing() {
             </div>
           </main>
 
-          {/* Footer */}
-          <footer className="h-10 bg-white border-t border-slate-100 px-10 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-primary" />
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">所有參數已保存</span>
-              </div>
-              <div className="h-3 w-px bg-slate-200"></div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">目前波段數量: 1204</span>
-            </div>
-            <div className="flex items-center gap-5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-              <a className="hover:text-primary transition-colors" href="#">使用指南</a>
-              <a className="hover:text-primary transition-colors" href="#">系統日誌</a>
-              <span className="text-slate-300">Version 1.0.2 Stable</span>
-            </div>
-          </footer>
+          <Footer
+            primaryLabel="下一步：模型設定"
+            primaryTo="/modelSet"
+            secondaryLabel="上一步"
+            secondaryTo="/"
+          />
         </div>
       </div>
   );

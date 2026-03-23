@@ -50,9 +50,9 @@ export default function Loading({ open, onClose }) {
 
             <div className="space-y-2 mb-8">
               <h4 className="text-xl font-bold text-gray-800">模型訓練中...</h4>
-              <p className="text-sm text-gray-500">
-                正在優化超參數: <span className="font-semibold text-primary">K-fold Validation</span>
-              </p>
+              {/*<p className="text-sm text-gray-500">*/}
+              {/*  正在優化超參數: <span className="font-semibold text-primary">K-fold Validation</span>*/}
+              {/*</p>*/}
             </div>
 
             <div className="w-full bg-gray-100 h-2 rounded-full mb-8 overflow-hidden">
