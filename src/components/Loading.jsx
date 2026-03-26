@@ -69,9 +69,6 @@ export default function Loading({ open, onClose }) {
             >
               取消訓練
             </button>
-            <p className="mt-6 text-[11px] text-gray-400 uppercase tracking-widest">
-              Estimated time remaining: 2m 15s
-            </p>
           </motion.div>
         </motion.div>
       ) : null}

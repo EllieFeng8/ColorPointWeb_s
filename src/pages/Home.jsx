@@ -5,6 +5,72 @@ import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
 
 const initialFiles = [];
+const uploadEndpoint = '/api/upload/';
+
+function getUploadRecordId(payload) {
+  return payload?.id ?? payload?._id ?? payload?.data?.id ?? payload?.data?._id ?? null;
+}
+
+function getFileId(payload) {
+  return payload?.fileId ?? payload?.file_id ?? payload?.data?.fileId ?? payload?.data?.file_id ?? null;
+}
+
+function normalizeUploadList(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function getUploadRecordTimestamp(record) {
+  const rawTimestamp =
+    record?.uploaded_at ??
+    record?.created_at ??
+    record?.updated_at ??
+    record?.timestamp ??
+    null;
+
+  if (!rawTimestamp) {
+    return 0;
+  }
+
+  const parsed = new Date(rawTimestamp).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getLatestUploadRecord(records) {
+  return [...records].sort(
+    (left, right) => getUploadRecordTimestamp(right) - getUploadRecordTimestamp(left)
+  )[0] ?? null;
+}
+
+function getMatchedUploadRecord(records, uploadRecordId) {
+  if (!uploadRecordId) {
+    return null;
+  }
+
+  return records.find((record) => {
+    const recordId = record?.id ?? record?._id ?? record?.data?.id ?? record?.data?._id ?? null;
+    return recordId === uploadRecordId;
+  }) ?? null;
+}
+
+function getMatchedFileId(record) {
+  return record?.fileId ?? record?.file_id ?? record?.file?.id ?? record?.data?.fileId ?? null;
+}
+
+function formatMetricValue(value) {
+  return value ?? '--';
+}
 
 function formatFileSize(bytes) {
   if (bytes < 1024) {
@@ -32,11 +98,18 @@ function formatUploadTime(timestamp) {
 function mapFilesToRows(fileList) {
   return Array.from(fileList).map((file) => ({
     id: `${file.name}-${file.lastModified}-${file.size}`,
+    rawFile: file,
     name: file.name,
     size: formatFileSize(file.size),
-    uploadTime: formatUploadTime(file.lastModified || Date.now()),
+    uploadTime: formatUploadTime(Date.now()),
     samples: '--',
-    range: '待分析'
+    wavenumberMin: '--',
+    wavenumberMax: '--',
+    status: 'uploading',
+    error: '',
+    response: null,
+    uploadRecordId: null,
+    fileId: null
   }));
 }
 
@@ -44,14 +117,159 @@ export default function Home() {
   const [files, setFiles] = useState(initialFiles);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
+  const selectedFile = files[0] ?? null;
+
+  const fetchUploadSummary = async (rowId, uploadRecordId) => {
+    const response = await fetch(uploadEndpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`GET /api/upload/ failed with HTTP ${response.status}`);
+    }
+
+    const payload = await response.json().catch(() => null);
+    const records = normalizeUploadList(payload);
+    const matchedRecord =
+      getMatchedUploadRecord(records, uploadRecordId) ?? getLatestUploadRecord(records);
+
+    console.log('[upload] summary lookup', {
+      uploadRecordId,
+      totalRecords: records.length,
+      matchedRecord
+    });
+
+    if (!matchedRecord) {
+      throw new Error('No upload records found in GET /api/upload/');
+    }
+
+    setFiles((currentFiles) =>
+      currentFiles.map((file) =>
+          file.id === rowId
+            ? {
+                ...file,
+                name: matchedRecord.filename ?? file.name,
+                uploadTime: matchedRecord.uploaded_at
+                  ? formatUploadTime(matchedRecord.uploaded_at)
+                  : file.uploadTime,
+                samples: formatMetricValue(matchedRecord.total_samples),
+                wavenumberMin: formatMetricValue(matchedRecord.wavenumber_min),
+                wavenumberMax: formatMetricValue(matchedRecord.wavenumber_max),
+                uploadRecordId: matchedRecord.id ?? matchedRecord._id ?? file.uploadRecordId,
+                fileId: getMatchedFileId(matchedRecord) ?? file.fileId
+              }
+            : file
+        )
+    );
+  };
+
+  const uploadFile = async (row) => {
+    const formData = new FormData();
+    formData.append('file', row.rawFile, row.rawFile.name);
+    console.log('[upload] start', {
+      endpoint: uploadEndpoint,
+      name: row.rawFile.name,
+      size: row.rawFile.size,
+      type: row.rawFile.type,
+      fields: Array.from(formData.keys())
+    });
+
+    try {
+      const response = await fetch(uploadEndpoint, {
+        method: 'POST',
+        body: formData
+      });
+      const responseContentType = response.headers.get('content-type') || '';
+      const responseBody = responseContentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => '');
+      console.log('[upload] response', {
+        name: row.rawFile.name,
+        status: response.status,
+        ok: response.ok,
+        contentType: responseContentType,
+        body: responseBody
+      });
+
+      if (!response.ok) {
+        const detail = typeof responseBody === 'string'
+          ? responseBody
+          : responseBody?.detail || responseBody?.message || JSON.stringify(responseBody);
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      }
+
+      const data = responseBody;
+      const uploadRecordId = getUploadRecordId(data);
+      const fileId = getFileId(data);
+      console.log('[upload] success', {
+        name: row.rawFile.name,
+        data,
+        uploadRecordId,
+        fileId
+      });
+
+      setFiles((currentFiles) =>
+        currentFiles.map((file) =>
+          file.id === row.id
+            ? {
+                ...file,
+                status: 'uploaded',
+                error: '',
+                response: data,
+                uploadRecordId,
+                fileId
+              }
+            : file
+        )
+      );
+
+      await fetchUploadSummary(row.id, uploadRecordId);
+    } catch (error) {
+      console.log('[upload] error', {
+        name: row.rawFile.name,
+        error
+      });
+      const errorMessage = error instanceof TypeError
+        ? 'Failed to fetch: check Vite proxy, backend address, or CORS.'
+        : error instanceof Error
+          ? error.message
+          : 'Upload failed';
+      setFiles((currentFiles) =>
+        currentFiles.map((file) =>
+          file.id === row.id
+            ? {
+                ...file,
+                status: 'error',
+                error: errorMessage
+              }
+            : file
+        )
+      );
+    }
+  };
 
   const addFiles = (fileList) => {
-    const nextFiles = mapFilesToRows(fileList);
+    const [selectedFile] = Array.from(fileList);
+    if (!selectedFile) {
+      return;
+    }
 
-    setFiles((prevFiles) => {
-      const existingIds = new Set(prevFiles.map((file) => file.id));
-      return [...prevFiles, ...nextFiles.filter((file) => !existingIds.has(file.id))];
-    });
+    if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+      console.log('[upload] rejected file', {
+        name: selectedFile.name,
+        reason: 'Only .csv files are allowed.'
+      });
+      return;
+    }
+
+    const [nextFile] = mapFilesToRows([selectedFile]);
+    console.log('[upload] selected file', nextFile.name);
+
+    setFiles([nextFile]);
+    uploadFile(nextFile);
   };
 
   const removeFile = (id) => {
@@ -122,7 +340,7 @@ export default function Home() {
                   transition={{ delay: 0.1 }}
                   className="text-slate-500 text-lg"
               >
-                請上傳或拖放您的光譜數據檔案（支持 .csv, .spc, .jdx 格式）
+                請上傳或拖放單一 .csv 光譜數據檔案
               </motion.p>
             </div>
           </header>
@@ -131,8 +349,7 @@ export default function Home() {
             <input
               ref={fileInputRef}
               type="file"
-              multiple
-              accept=".csv,.spc,.jdx"
+              accept=".csv,text/csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -192,8 +409,10 @@ export default function Home() {
                       <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">檔名</th>
                       <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">檔案大小</th>
                       <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">上傳時間</th>
+                      <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">狀態</th>
                       <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">樣本數</th>
-                      <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500 text-center">光譜範圍</th>
+                      <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">最小波數</th>
+                      <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500">最大波數</th>
                       <th className="px-8 py-5 text-xs font-extrabold uppercase tracking-widest text-slate-500 text-right">操作</th>
                     </tr>
                   </thead>
@@ -218,15 +437,30 @@ export default function Home() {
                           <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.size}</td>
                           <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.uploadTime}</td>
                           <td className="px-8 py-5">
+                            <span
+                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                                file.status === 'uploaded'
+                                  ? 'bg-[#82b091]/10 text-[#659475] border-[#82b091]/10'
+                                  : file.status === 'error'
+                                    ? 'bg-red-50 text-red-600 border-red-100'
+                                    : 'bg-amber-50 text-amber-600 border-amber-100'
+                              }`}
+                              title={file.error || undefined}
+                            >
+                              {file.status === 'uploaded'
+                                ? '上傳成功'
+                                : file.status === 'error'
+                                  ? '上傳失敗'
+                                  : '上傳中'}
+                            </span>
+                          </td>
+                          <td className="px-8 py-5">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[#82b091]/10 text-[#659475] border border-[#82b091]/10">
-                              {file.samples} Samples
+                              {file.samples}
                             </span>
                           </td>
-                          <td className="px-8 py-5 text-center">
-                            <span className="text-xs font-mono font-bold bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg">
-                              {file.range}
-                            </span>
-                          </td>
+                          <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.wavenumberMin}</td>
+                          <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.wavenumberMax}</td>
                           <td className="px-8 py-5 text-right">
                             <button
                               onClick={() => removeFile(file.id)}
@@ -240,7 +474,7 @@ export default function Home() {
                     </AnimatePresence>
                     {files.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-8 py-12 text-center text-slate-400 italic">
+                        <td colSpan={8} className="px-8 py-12 text-center text-slate-400 italic">
                           尚未選擇任何檔案
                         </td>
                       </tr>
@@ -254,6 +488,11 @@ export default function Home() {
           <Footer
             primaryLabel="下一步：前處理"
             primaryTo="/preprocessing"
+            primaryState={{
+              fileId: selectedFile?.fileId ?? '',
+              uploadRecordId: selectedFile?.uploadRecordId ?? '',
+              fileName: selectedFile?.name ?? ''
+            }}
             secondaryLabel="取消"
             onSecondaryClick={resetForm}
           />

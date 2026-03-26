@@ -11,13 +11,19 @@ import Loading from '../components/Loading.jsx';
 
 export default function ModelSet() {
     const [activeTab, setActiveTab] = useState('regression');
-    const [selectedModels, setSelectedModels] = useState(['pls']);
+    const [selectedRegressionModel, setSelectedRegressionModel] = useState('pls');
+    const [selectedClassificationModel, setSelectedClassificationModel] = useState('svm');
+    const [svrKernel, setSvrKernel] = useState('linear');
+    const [svmKernel, setSvmKernel] = useState('linear');
+    const [selectedHyperparameter, setSelectedHyperparameter] = useState('k_fold');
     const [showLoading, setShowLoading] = useState(false);
 
-    const toggleModel = (id) => {
-        setSelectedModels(prev =>
-            prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
-        );
+    const selectRegressionModel = (id) => {
+        setSelectedRegressionModel(id);
+    };
+
+    const selectClassificationModel = (id) => {
+        setSelectedClassificationModel(id);
     };
 
     return (
@@ -75,8 +81,10 @@ export default function ModelSet() {
                                         <ModelCard
                                             id="pls"
                                             title="PLS"
-                                            selected={selectedModels.includes('pls')}
-                                            onToggle={() => toggleModel('pls')}
+                                            selected={selectedRegressionModel === 'pls'}
+                                            onToggle={() => selectRegressionModel('pls')}
+                                            inputType="radio"
+                                            inputName="regression_model"
                                         >
                                             <div className="space-y-4">
                                                 <InputGroup label="Components:" defaultValue="12" />
@@ -85,31 +93,51 @@ export default function ModelSet() {
                                         <ModelCard
                                             id="svr"
                                             title="SVR"
-                                            selected={selectedModels.includes('svr')}
-                                            onToggle={() => toggleModel('svr')}
+                                            selected={selectedRegressionModel === 'svr'}
+                                            onToggle={() => selectRegressionModel('svr')}
+                                            inputType="radio"
+                                            inputName="regression_model"
                                         >
                                             <div className="space-y-3">
                                                 <div className="space-y-2">
-                                                    <RadioOption label="Linear" name="svr_kernel" checked />
-                                                    <RadioOption label="RBF" name="svr_kernel" />
+                                                    <RadioOption
+                                                        label="Linear"
+                                                        name="svr_kernel"
+                                                        checked={svrKernel === 'linear'}
+                                                        onChange={() => setSvrKernel('linear')}
+                                                    />
+                                                    <RadioOption
+                                                        label="RBF"
+                                                        name="svr_kernel"
+                                                        checked={svrKernel === 'rbf'}
+                                                        onChange={() => setSvrKernel('rbf')}
+                                                    />
                                                 </div>
-                                                <InputGroup label="C:" placeholder="" />
-                                                <InputGroup label="tol:" placeholder="" />
+                                                {svrKernel === 'rbf' && (
+                                                    <>
+                                                        <InputGroup label="C:" placeholder="" />
+                                                        <InputGroup label="tol:" placeholder="" />
+                                                    </>
+                                                )}
                                             </div>
                                         </ModelCard>
                                         <ModelCard
                                             id="rf"
                                             title="RF"
-                                            selected={selectedModels.includes('rf')}
-                                            onToggle={() => toggleModel('rf')}
+                                            selected={selectedRegressionModel === 'rf'}
+                                            onToggle={() => selectRegressionModel('rf')}
+                                            inputType="radio"
+                                            inputName="regression_model"
                                         >
                                             <InputGroup label="n_estimators:" defaultValue="100" />
                                         </ModelCard>
                                         <ModelCard
                                             id="xgboost"
                                             title="XGBoost"
-                                            selected={selectedModels.includes('xgboost')}
-                                            onToggle={() => toggleModel('xgboost')}
+                                            selected={selectedRegressionModel === 'xgboost'}
+                                            onToggle={() => selectRegressionModel('xgboost')}
+                                            inputType="radio"
+                                            inputName="regression_model"
                                         >
                                             <div className="space-y-3">
                                                 <InputGroup label="n_estimators:" defaultValue="100" />
@@ -119,8 +147,10 @@ export default function ModelSet() {
                                         <ModelCard
                                             id="cnn"
                                             title="CNN"
-                                            selected={selectedModels.includes('cnn')}
-                                            onToggle={() => toggleModel('cnn')}
+                                            selected={selectedRegressionModel === 'cnn'}
+                                            onToggle={() => selectRegressionModel('cnn')}
+                                            inputType="radio"
+                                            inputName="regression_model"
                                         >
                                             <span className="text-sm text-slate-400 italic">Auto-configured</span>
                                         </ModelCard>
@@ -132,31 +162,51 @@ export default function ModelSet() {
                                         <ModelCard
                                             id="svm"
                                             title="SVM"
-                                            selected={selectedModels.includes('svm')}
-                                            onToggle={() => toggleModel('svm')}
+                                            selected={selectedClassificationModel === 'svm'}
+                                            onToggle={() => selectClassificationModel('svm')}
+                                            inputType="radio"
+                                            inputName="classification_model"
                                         >
                                             <div className="space-y-4">
                                                 <div className="space-y-2">
-                                                    <RadioOption label="linear" name="svm_kernel" />
-                                                    <RadioOption label="RBF" name="svm_kernel" checked />
+                                                    <RadioOption
+                                                        label="linear"
+                                                        name="svm_kernel"
+                                                        checked={svmKernel === 'linear'}
+                                                        onChange={() => setSvmKernel('linear')}
+                                                    />
+                                                    <RadioOption
+                                                        label="RBF"
+                                                        name="svm_kernel"
+                                                        checked={svmKernel === 'rbf'}
+                                                        onChange={() => setSvmKernel('rbf')}
+                                                    />
                                                 </div>
-                                                <InputGroup label="C:" placeholder="" />
-                                                <InputGroup label="tol:" placeholder="" />
+                                                {svmKernel === 'rbf' && (
+                                                    <>
+                                                        <InputGroup label="C:" placeholder="" />
+                                                        <InputGroup label="tol:" placeholder="" />
+                                                    </>
+                                                )}
                                             </div>
                                         </ModelCard>
                                         <ModelCard
                                             id="lda"
                                             title="LDA"
-                                            selected={selectedModels.includes('lda')}
-                                            onToggle={() => toggleModel('lda')}
+                                            selected={selectedClassificationModel === 'lda'}
+                                            onToggle={() => selectClassificationModel('lda')}
+                                            inputType="radio"
+                                            inputName="classification_model"
                                         >
                                             <InputGroup label="n_estimators:" placeholder="" />
                                         </ModelCard>
                                         <ModelCard
                                             id="kmeans"
                                             title="K-means"
-                                            selected={selectedModels.includes('kmeans')}
-                                            onToggle={() => toggleModel('kmeans')}
+                                            selected={selectedClassificationModel === 'kmeans'}
+                                            onToggle={() => selectClassificationModel('kmeans')}
+                                            inputType="radio"
+                                            inputName="classification_model"
                                         >
                                             <InputGroup label="n_neighbors:" placeholder="" />
                                         </ModelCard>
@@ -209,24 +259,46 @@ export default function ModelSet() {
                             <h3 className="text-xl font-bold text-slate-800 mb-6">超參數</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-[#659475]/30 transition-colors">
-                                    <input className="rounded border-slate-300 text-[#659475] focus:ring-[#659475] h-5 w-5" id="grid_search" type="checkbox" />
+                                    <input
+                                        className="border-slate-300 text-[#659475] focus:ring-[#659475] h-5 w-5"
+                                        id="grid_search"
+                                        type="radio"
+                                        name="hyperparameter_mode"
+                                        checked={selectedHyperparameter === 'grid_search'}
+                                        onChange={() => setSelectedHyperparameter('grid_search')}
+                                    />
                                     <div className="flex flex-col">
                                         <label className="text-sm font-semibold text-slate-700 cursor-pointer" htmlFor="grid_search">Grid Search</label>
-                                        <span className="text-[11px] text-slate-400">Exhaustive search over parameters</span>
+
                                     </div>
+                                    {selectedHyperparameter === 'grid_search' && (
+                                        <div className="flex flex-1 flex-col items-end gap-3 ml-auto">
+                                            <input className="w-full max-w-[120px] bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none" type="text" defaultValue="1" />
+                                            <p className="max-w-[310px] text-[12px] leading-relaxed text-amber-600 text-right">
+                                                Grid Search 會大幅增加運算時間，可能需要較長等待時間
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center gap-8 hover:border-[#659475]/30 transition-colors">
                                     <div className="flex items-center gap-4">
-                                        <input defaultChecked className="rounded border-slate-300 text-[#659475] focus:ring-[#659475] h-5 w-5" id="k_fold" type="checkbox" />
+                                        <input
+                                            className="border-slate-300 text-[#659475] focus:ring-[#659475] h-5 w-5"
+                                            id="k_fold"
+                                            type="radio"
+                                            name="hyperparameter_mode"
+                                            checked={selectedHyperparameter === 'k_fold'}
+                                            onChange={() => setSelectedHyperparameter('k_fold')}
+                                        />
                                         <div className="flex flex-col">
                                             <label className="text-sm font-semibold text-slate-700 cursor-pointer" htmlFor="k_fold">K-fold Validation</label>
-                                            <span className="text-[11px] text-slate-400">K=5 folds configured</span>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3 flex-1 max-w-[120px] ml-auto">
-                                        <label className="text-[11px] font-bold text-slate-400 uppercase">C / K:</label>
-                                        <input className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none" type="text" defaultValue="10" />
-                                    </div>
+                                    {selectedHyperparameter === 'k_fold' && (
+                                        <div className="flex items-center gap-3 flex-1 max-w-[120px] ml-auto">
+                                            <input className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none" type="text" defaultValue="10" />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -234,7 +306,7 @@ export default function ModelSet() {
                 </main>
 
                 <Footer
-                    primaryLabel="下一步:評估分析"
+                    primaryLabel="下一步:確定訓練"
                     onPrimaryClick={() => setShowLoading(true)}
                     secondaryLabel="上一步"
                     secondaryTo="/preprocessing"
@@ -278,22 +350,25 @@ function TabButton({ label, active, onClick }) {
     );
 }
 
-function ModelCard({ id, title, selected, onToggle, children }) {
+function ModelCard({ id, title, selected, onToggle, children, inputType = 'checkbox', inputName }) {
     return (
         <div className={`p-6 border-r border-b lg:border-b-0 border-slate-100 flex flex-col min-h-[280px] transition-colors ${selected ? 'bg-white' : 'bg-slate-50/30'}`}>
             <div className="flex items-center gap-2 mb-4">
                 <input
-                    type="checkbox"
+                    type={inputType}
                     id={id}
+                    name={inputName}
                     checked={selected}
                     onChange={onToggle}
-                    className="rounded border-slate-300 text-[#659475] focus:ring-[#659475] h-4 w-4"
+                    className="border-slate-300 text-[#659475] focus:ring-[#659475] h-4 w-4"
                 />
                 <label htmlFor={id} className="font-bold text-slate-700 cursor-pointer">{title}</label>
             </div>
-            <div className="mt-2 pt-4 border-t border-slate-50">
-                {children}
-            </div>
+            {selected && (
+                <div className="mt-2 pt-4 border-t border-slate-50">
+                    {children}
+                </div>
+            )}
         </div>
     );
 }
@@ -312,13 +387,14 @@ function InputGroup({ label, defaultValue, placeholder }) {
     );
 }
 
-function RadioOption({ label, name, checked = false }) {
+function RadioOption({ label, name, checked = false, onChange }) {
     return (
         <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
             <input
                 type="radio"
                 name={name}
-                defaultChecked={checked}
+                checked={checked}
+                onChange={onChange}
                 className="text-[#659475] focus:ring-[#659475] h-3 w-3"
             />
             <span>{label}</span>

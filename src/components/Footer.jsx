@@ -5,9 +5,11 @@ import { Link } from 'react-router-dom';
 export default function Footer({
   primaryLabel = '下一步',
   primaryTo,
+  primaryState,
   onPrimaryClick,
   secondaryLabel = '取消',
   secondaryTo,
+  secondaryState,
   onSecondaryClick
 }) {
   const secondaryClassName =
@@ -19,7 +21,7 @@ export default function Footer({
     <footer className="fixed bottom-0 right-0 left-72 border-t border-slate-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
       <div className="mx-auto flex max-w-6xl justify-end gap-6 px-12 py-6">
         {secondaryTo ? (
-          <Link to={secondaryTo} className={secondaryClassName}>
+          <Link to={secondaryTo} state={secondaryState} className={secondaryClassName}>
             <ArrowLeft size={18} />
             {secondaryLabel}
           </Link>
@@ -33,7 +35,7 @@ export default function Footer({
           </button>
         )}
         {primaryTo ? (
-          <Link to={primaryTo} className={primaryClassName}>
+          <Link to={primaryTo} state={primaryState} className={primaryClassName}>
             {primaryLabel}
             <ArrowRight size={18} />
           </Link>

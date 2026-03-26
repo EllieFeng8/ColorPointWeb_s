@@ -3,22 +3,72 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  LineChart,
   ChevronRight,
   RotateCcw,
   Zap,
   FolderOpen,
   Settings2,
-  Filter,
-  Search,
-  LayoutGrid,
-  Download
+  Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 import NavBar from "@/src/components/NavBar.jsx";
 import Footer from "@/src/components/Footer.jsx";
+import SpectralChart from "@/src/components/SpectralChart.jsx";
+
+function toNumberArray(values) {
+  return Array.isArray(values) ? values.map((value) => Number(value)) : [];
+}
+
+function extractSpectralDataset(payload) {
+  const source = payload ?? {};
+  const wavelengths = toNumberArray(source?.wavelengths);
+  const samples = Array.isArray(source?.data)
+    ? source.data.map((sample, index) => ({
+        label: sample?.label || `Sample ${index + 1}`,
+        spectra: toNumberArray(sample?.spectra),
+        components: sample?.components ?? {}
+      }))
+    : [];
+
+  return {
+    wavelengths,
+    totalSamples: Number(source?.total_samples ?? samples.length),
+    samples,
+    componentOptions: Array.from(new Set(samples.flatMap((sample) => Object.keys(sample.components || {}))))
+  };
+}
+
+function extractPreprocessingId(payload) {
+  return (
+    payload?.preprocessing_id ??
+    payload?.preprocessingId ??
+    payload?.id ??
+    payload?.config?.id ??
+    null
+  );
+}
+
+function extractPreprocessingDataset(payload) {
+  const source = payload ?? {};
+  const wavelengths = toNumberArray(source?.wavelengths);
+  const samples = Array.isArray(source?.data)
+    ? source.data.map((sample, index) => ({
+        label: sample?.label || `Sample ${index + 1}`,
+        spectra: toNumberArray(sample?.spectra),
+        components: sample?.components ?? {}
+      }))
+    : [];
+
+  return {
+    wavelengths,
+    totalSamples: Number(source?.config?.result_samples_count ?? samples.length),
+    samples,
+    componentOptions: Array.from(new Set(samples.flatMap((sample) => Object.keys(sample.components || {}))))
+  };
+}
 
 const Toggle = ({ checked, onChange }) => (
     <button
@@ -36,11 +86,361 @@ const Toggle = ({ checked, onChange }) => (
 );
 
 export default function Preprocessing() {
+  const location = useLocation();
+  const routedFileId = location.state?.fileId ?? '';
   const [baseline, setBaseline] = useState(true);
   const [snv, setSnv] = useState(true);
   const [sg, setSg] = useState(false);
   const [derivative, setDerivative] = useState(false);
   const [normalization, setNormalization] = useState(true);
+  const [sgWindowSize, setSgWindowSize] = useState('11');
+  const [sgPolynomialOrder, setSgPolynomialOrder] = useState('2');
+  const [derivativeOrder, setDerivativeOrder] = useState('1');
+  const [normalizationType, setNormalizationType] = useState('mean');
+  const [wavelengthMethod, setWavelengthMethod] = useState('manual_clip');
+  const [carsIterations, setCarsIterations] = useState('20');
+  const [carsKFold, setCarsKFold] = useState('3');
+  const [selectedFileId, setSelectedFileId] = useState('');
+  const [componentOptions, setComponentOptions] = useState([]);
+  const [selectedComponent, setSelectedComponent] = useState('');
+  const [preprocessingId, setPreprocessingId] = useState('');
+  const [spectralDatasets, setSpectralDatasets] = useState({
+    raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
+    processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  useEffect(() => {
+    if (routedFileId) {
+      setSelectedFileId(routedFileId);
+      return undefined;
+    }
+
+    const loadLatestUpload = async () => {
+      try {
+        const response = await fetch('/api/upload/', {
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`GET /api/upload/ failed with HTTP ${response.status}`);
+        }
+
+        const uploads = await response.json();
+        const latestUpload = Array.isArray(uploads) ? uploads[0] : uploads?.results?.[0];
+        const nextFileId = latestUpload?.id;
+
+        console.log('[preprocessing] latest upload', {
+          uploads,
+          nextFileId
+        });
+
+        if (nextFileId) {
+          setSelectedFileId(nextFileId);
+        }
+      } catch (error) {
+        console.log('[preprocessing] latest upload error', error);
+      }
+    };
+
+    loadLatestUpload();
+    return undefined;
+  }, [routedFileId]);
+
+  useEffect(() => {
+    const loadSpectralDatasets = async () => {
+      if (!selectedFileId) {
+        setComponentOptions([]);
+        setSelectedComponent('');
+        setPreprocessingId('');
+        setSpectralDatasets({
+          raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
+          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+        });
+        return;
+      }
+
+      try {
+        const previewResponse = await fetch(`/api/upload/${selectedFileId}/preview`, {
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        if (!previewResponse.ok) {
+          throw new Error(`GET /api/upload/${selectedFileId}/preview failed with HTTP ${previewResponse.status}`);
+        }
+
+        const previewPayload = await previewResponse.json().catch(() => null);
+
+        const rawDataset = extractSpectralDataset(previewPayload);
+        const nextComponents = rawDataset.componentOptions;
+
+        console.log('[preprocessing] spectral datasets', {
+          fileId: selectedFileId,
+          rawDataset,
+          nextComponents
+        });
+
+        setSpectralDatasets({
+          raw: rawDataset,
+          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+        });
+        setComponentOptions(nextComponents);
+        setSelectedComponent((current) =>
+          nextComponents.includes(current) ? current : (nextComponents[0] || '')
+        );
+      } catch (error) {
+        console.log('[preprocessing] spectral datasets error', error);
+        setComponentOptions([]);
+        setSelectedComponent('');
+        setPreprocessingId('');
+        setSpectralDatasets({
+          raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
+          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+        });
+      }
+    };
+
+    loadSpectralDatasets();
+  }, [selectedFileId]);
+
+  const resetSettings = () => {
+    setBaseline(true);
+    setSnv(true);
+    setSg(false);
+    setDerivative(false);
+    setNormalization(true);
+    setSgWindowSize('11');
+    setSgPolynomialOrder('2');
+    setDerivativeOrder('1');
+    setNormalizationType('mean');
+    setWavelengthMethod('manual_clip');
+    setCarsIterations('20');
+    setCarsKFold('3');
+    setSubmitError('');
+  };
+
+  const handleApplySettings = async () => {
+    if (!selectedFileId) {
+      setSubmitError('缺少 file_id，請先上傳檔案。');
+      return;
+    }
+
+    if (!selectedComponent) {
+      setSubmitError('缺少 component，請先選擇 component。');
+      return;
+    }
+
+    const methods = {};
+
+    if (baseline) {
+      methods.standard_white = true;
+    }
+
+    if (snv) {
+      methods.snv = true;
+    }
+
+    if (sg) {
+      methods.sg = {
+        window_size: Number(sgWindowSize),
+        polynomial_order: Number(sgPolynomialOrder)
+      };
+    }
+
+    if (derivative) {
+      methods.derivative = {
+        order: Number(derivativeOrder)
+      };
+    }
+
+    if (normalization) {
+      methods.normalization = {
+        type: normalizationType
+      };
+    }
+
+    methods.wavelength_selection = {
+      method: wavelengthMethod
+    };
+
+    if (wavelengthMethod === 'CARS') {
+      methods.wavelength_selection.n_iters = Number(carsIterations);
+      methods.wavelength_selection.k_fold = Number(carsKFold);
+    }
+
+    const payload = {
+      file_id: selectedFileId,
+      component: selectedComponent,
+      methods
+    };
+
+    console.log('[preprocessing] current state', {
+      selectedFileId,
+      selectedComponent,
+      baseline,
+      snv,
+      sg,
+      sgWindowSize,
+      sgPolynomialOrder,
+      derivative,
+      derivativeOrder,
+      normalization,
+      normalizationType,
+      wavelengthMethod,
+      carsIterations,
+      carsKFold
+    });
+    console.log('[preprocessing] payload keys', {
+      rootKeys: Object.keys(payload),
+      methodKeys: Object.keys(payload.methods),
+      sgKeys: payload.methods.sg ? Object.keys(payload.methods.sg) : [],
+      derivativeKeys: payload.methods.derivative ? Object.keys(payload.methods.derivative) : [],
+      normalizationKeys: payload.methods.normalization ? Object.keys(payload.methods.normalization) : [],
+      wavelengthSelectionKeys: payload.methods.wavelength_selection
+        ? Object.keys(payload.methods.wavelength_selection)
+        : []
+    });
+    console.log('[preprocessing] execute payload', payload);
+    setIsSubmitting(true);
+    setSubmitError('');
+
+    try {
+      const response = await fetch('/api/preprocessing/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responseContentType = response.headers.get('content-type') || '';
+      const responseBody = responseContentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => '');
+
+      console.log('[preprocessing] execute response', {
+        status: response.status,
+        ok: response.ok,
+        fileId: selectedFileId,
+        component: selectedComponent,
+        body: responseBody
+      });
+
+      if (!response.ok) {
+        const detail = typeof responseBody === 'string'
+          ? responseBody
+          : responseBody?.detail || responseBody?.message || JSON.stringify(responseBody);
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      }
+
+      const nextPreprocessingId = extractPreprocessingId(responseBody);
+      if (!nextPreprocessingId) {
+        throw new Error('前處理回應缺少 preprocessing_id');
+      }
+
+      setPreprocessingId(nextPreprocessingId);
+    } catch (error) {
+      console.log('[preprocessing] execute error', error);
+      setSubmitError(error instanceof Error ? error.message : '套用設置失敗');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!preprocessingId) {
+      return undefined;
+    }
+
+    let isActive = true;
+    let pollTimeoutId = null;
+
+    const loadPreprocessingResult = async () => {
+      try {
+        const response = await fetch(`/api/preprocessing/${preprocessingId}`, {
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`GET /api/preprocessing/${preprocessingId} failed with HTTP ${response.status}`);
+        }
+
+        const payload = await response.json().catch(() => null);
+        if (!isActive) {
+          return;
+        }
+
+        const status = payload?.config?.status ?? payload?.status ?? '';
+        console.log('[preprocessing] result payload', {
+          preprocessingId,
+          status,
+          payload
+        });
+
+        if (status === 'running' || status === 'pending') {
+          pollTimeoutId = window.setTimeout(loadPreprocessingResult, 1200);
+          return;
+        }
+
+        if (status && status !== 'completed') {
+          throw new Error(`前處理狀態異常: ${status}`);
+        }
+
+        const processedDataset = extractPreprocessingDataset(payload);
+        const nextComponents = Array.from(new Set([
+          ...spectralDatasets.raw.componentOptions,
+          ...processedDataset.componentOptions
+        ]));
+
+        setSpectralDatasets((current) => ({
+          ...current,
+          processed: processedDataset
+        }));
+        setComponentOptions(nextComponents);
+        setSelectedComponent((current) =>
+          nextComponents.includes(current) ? current : (nextComponents[0] || '')
+        );
+      } catch (error) {
+        console.log('[preprocessing] result load error', error);
+        if (isActive) {
+          setSubmitError(error instanceof Error ? error.message : '取得前處理結果失敗');
+        }
+      }
+    };
+
+    loadPreprocessingResult();
+
+    return () => {
+      isActive = false;
+      if (pollTimeoutId) {
+        window.clearTimeout(pollTimeoutId);
+      }
+    };
+  }, [preprocessingId, spectralDatasets.raw.componentOptions]);
+
+  const rawSamples = selectedComponent
+    ? spectralDatasets.raw.samples
+      .filter((sample) => sample.components?.[selectedComponent] !== undefined)
+      .map((sample) => ({
+        ...sample,
+        componentsValue: sample.components?.[selectedComponent]
+      }))
+    : [];
+  const processedSamples = selectedComponent
+    ? spectralDatasets.processed.samples
+      .filter((sample) => sample.components?.[selectedComponent] !== undefined)
+      .map((sample) => ({
+        ...sample,
+        componentsValue: sample.components?.[selectedComponent]
+      }))
+    : [];
 
   return (
       <div className="h-screen flex overflow-hidden font-display">
@@ -70,14 +470,6 @@ export default function Preprocessing() {
                     調整算法與參數以優化數據特徵品質</motion.p>
                 </div>
               </header>
-              <div className="flex gap-4">
-                <button className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm">
-                  <RotateCcw size={18} /> 重置
-                </button>
-                <button className="px-8 py-2.5 bg-primary hover:bg-primary-light text-white rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary/30">
-                  <Zap size={18} /> 套用設置
-                </button>
-              </div>
             </div>
 
             <div className="grid grid-cols-12 gap-8">
@@ -93,10 +485,19 @@ export default function Preprocessing() {
                   </div>
                   <div className="p-6">
                     <div className="relative">
-                      <select className="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-primary/20 outline-none appearance-none cursor-pointer">
-                        <option>小麥蛋白質含量分析 (Batch-004)</option>
-                        <option>玉米澱粉檢測 (Batch-001)</option>
-                        <option>大豆含油量分析 (Batch-012)</option>
+                      <select
+                        value={selectedComponent}
+                        onChange={(event) => setSelectedComponent(event.target.value)}
+                        className="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-primary/20 outline-none appearance-none cursor-pointer"
+                      >
+                        {componentOptions.length === 0 && (
+                          <option value="">暫無 components 資料</option>
+                        )}
+                        {componentOptions.map((component) => (
+                          <option key={component} value={component}>
+                            {component}
+                          </option>
+                        ))}
                       </select>
                       <div className="absolute right-3 top-3 pointer-events-none text-slate-400">
                         <ChevronRight size={20} className="rotate-90" />
@@ -116,7 +517,7 @@ export default function Preprocessing() {
                   <div className="p-6 space-y-6">
                     <div className="space-y-6">
                       <div className="flex items-center justify-between group cursor-pointer">
-                        <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">調整標準白 (Baseline)</span>
+                        <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">調整標準白</span>
                         <Toggle checked={baseline} onChange={setBaseline} />
                       </div>
 
@@ -127,29 +528,55 @@ export default function Preprocessing() {
 
                       <div className="space-y-3">
                         <div className="flex items-center justify-between group cursor-pointer">
-                          <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">SG 平滑處理 (Savitzky-Golay)</span>
+                          <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">SG 平滑處理</span>
                           <Toggle checked={sg} onChange={setSg} />
                         </div>
-                        <div className="grid grid-cols-2 gap-3 pl-2">
+                        {sg && (
+                          <div className="grid grid-cols-2 gap-3 pl-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">Window size</label>
+                              <input
+                                value={sgWindowSize}
+                                onChange={(event) => setSgWindowSize(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="11"
+                                type="number"
+                              />
+                            </div>
 
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase">Order/Degree (次方)</label>
-                            <input className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none" placeholder="2" type="number" />
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                              <input
+                                value={sgPolynomialOrder}
+                                onChange={(event) => setSgPolynomialOrder(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="2"
+                                type="number"
+                              />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       <div className="space-y-3">
                         <div className="flex items-center justify-between group cursor-pointer">
-                          <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">Derivative Processing (微分處理)</span>
+                          <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">微分處理</span>
                           <Toggle checked={derivative} onChange={setDerivative} />
                         </div>
-                        <div className="pl-2">
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase">Order (次方數)</label>
-                            <input className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none" placeholder="1" type="number" />
+                        {derivative && (
+                          <div className="pl-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                              <input
+                                value={derivativeOrder}
+                                onChange={(event) => setDerivativeOrder(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="1"
+                                type="number"
+                              />
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       <div className="space-y-3">
@@ -157,16 +584,30 @@ export default function Preprocessing() {
                           <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">數據標準化</span>
                           <Toggle checked={normalization} onChange={setNormalization} />
                         </div>
-                        <div className="pl-2 flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input defaultChecked name="norm_type" type="radio" className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20" />
-                            <span className="text-xs font-semibold text-slate-600">Mean (平均值)</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input name="norm_type" type="radio" className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20" />
-                            <span className="text-xs font-semibold text-slate-600">Standard Deviation (標準差)</span>
-                          </label>
-                        </div>
+                        {normalization && (
+                          <div className="pl-2 flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                checked={normalizationType === 'mean'}
+                                onChange={() => setNormalizationType('mean')}
+                                name="norm_type"
+                                type="radio"
+                                className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20"
+                              />
+                              <span className="text-xs font-semibold text-slate-600">平均值</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                checked={normalizationType === 'z-score'}
+                                onChange={() => setNormalizationType('z-score')}
+                                name="norm_type"
+                                type="radio"
+                                className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20"
+                              />
+                              <span className="text-xs font-semibold text-slate-600">標準差</span>
+                            </label>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -176,123 +617,90 @@ export default function Preprocessing() {
                       </h3>
                       <div className="space-y-5">
                         <div className="grid grid-cols-2 gap-2 mt-4">
-                          {['Manual Clipping', 'VIP', 'RF Importance', 'CARS'].map((tag, i) => (
-                              <label key={tag} className="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
-                                <input defaultChecked={i === 0} type="checkbox" className="w-4 h-4 text-primary border-slate-200 rounded focus:ring-primary/20" />
-                                <span className="text-[11px] font-bold text-slate-600 truncate">{tag}</span>
+                          {[
+                            { label: 'Manual Clipping', value: 'manual_clip' },
+                            { label: 'VIP', value: 'VIP' },
+                            { label: 'RF Importance', value: 'RF_Feature_Importance' },
+                            { label: 'CARS', value: 'CARS' }
+                          ].map((tag) => (
+                              <label key={tag.value} className="flex items-center gap-2 p-2 rounded-lg border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                                <input
+                                  checked={wavelengthMethod === tag.value}
+                                  onChange={() => setWavelengthMethod(tag.value)}
+                                  type="radio"
+                                  name="wavelength_method"
+                                  className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20"
+                                />
+                                <span className="text-[11px] font-bold text-slate-600 truncate">{tag.label}</span>
                               </label>
                           ))}
                         </div>
+                        {wavelengthMethod === 'CARS' && (
+                          <div className="grid grid-cols-2 gap-3 pl-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">n_iters</label>
+                              <input
+                                value={carsIterations}
+                                onChange={(event) => setCarsIterations(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="20"
+                                type="number"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">k_fold</label>
+                              <input
+                                value={carsKFold}
+                                onChange={(event) => setCarsKFold(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="3"
+                                type="number"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
+
                     </div>
+
                   </div>
+
                 </div>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={resetSettings}
+                    className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <RotateCcw size={18} /> 重置
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplySettings}
+                    disabled={isSubmitting}
+                    className="px-8 py-2.5 bg-primary hover:bg-primary-light disabled:opacity-60 text-white rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary/30"
+                  >
+                    <Zap size={18} /> {isSubmitting ? '套用中...' : '套用設置'}
+                  </button>
+                </div>
+                {submitError && (
+                  <p className="text-sm font-semibold text-red-600">{submitError}</p>
+                )}
               </div>
 
               {/* Right Column Visualization */}
               <div className="col-span-8 flex flex-col gap-8">
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-subtle flex flex-col h-[600px] overflow-hidden">
-                  <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                      <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                        <LineChart size={18} className="text-primary" /> 光譜視覺化分析
-                      </h3>
-                      <div className="flex items-center gap-6 border-l border-slate-100 pl-6">
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-1 rounded-full bg-slate-200"></span>
-                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">原始光譜</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-6 h-1 rounded-full bg-primary shadow-[0_0_8px_rgba(101,148,117,0.4)]"></span>
-                          <span className="text-[11px] font-bold text-primary uppercase tracking-wider">處理後光譜</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="size-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:border-primary/30 text-slate-400 hover:text-primary transition-all">
-                        <Search size={18} />
-                      </button>
-                      <button className="size-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:border-primary/30 text-slate-400 hover:text-primary transition-all">
-                        <LayoutGrid size={18} />
-                      </button>
-                      <button className="size-9 flex items-center justify-center rounded-xl bg-slate-50 border border-slate-100 hover:bg-white hover:border-primary/30 text-slate-400 hover:text-primary transition-all">
-                        <Download size={18} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-8 relative flex flex-col">
-                    <div className="flex-1 w-full bg-white rounded-2xl border border-slate-100 flex flex-col relative overflow-hidden">
-                      <div className="absolute inset-0 p-10">
-                        <svg className="w-full h-full" preserveAspectRatio="none" viewBox="0 0 1000 400">
-                          <g className="stroke-slate-50" strokeWidth="1">
-                            <line x1="0" x2="1000" y1="0" y2="0" />
-                            <line x1="0" x2="1000" y1="100" y2="100" />
-                            <line x1="0" x2="1000" y1="200" y2="200" />
-                            <line x1="0" x2="1000" y1="300" y2="300" />
-                            <line x1="0" x2="1000" y1="400" y2="400" />
-                          </g>
-                          {/* Raw Spectrum (dashed) */}
-                          <path
-                              className="stroke-slate-200"
-                              d="M0 350 Q 50 340, 100 345 T 200 320 T 300 280 T 400 310 T 500 200 T 600 250 T 700 150 T 800 200 T 900 120 T 1000 140"
-                              fill="none"
-                              strokeDasharray="6,4"
-                              strokeWidth="2"
-                          />
-                          {/* Processed Spectrum */}
-                          <path
-                              className="stroke-primary"
-                              d="M0 340 Q 50 330, 100 335 T 200 310 T 300 270 T 400 300 T 500 190 T 600 240 T 700 140 T 800 190 T 900 110 T 1000 130"
-                              fill="none"
-                              filter="drop-shadow(0px 4px 6px rgba(101,148,117,0.2))"
-                              strokeLinecap="round"
-                              strokeWidth="4"
-                          />
-                          {/* Indicator Line */}
-                          <line className="stroke-primary/20" strokeWidth="2" x1="500" x2="500" y1="0" y2="400" />
-                          <circle className="fill-white stroke-primary" cx="500" cy="190" r="6" strokeWidth="3" />
-                        </svg>
-                      </div>
-                      {/* Tooltip */}
-                      <div className="absolute top-12 left-[52%] bg-white border border-slate-100 p-4 rounded-xl shadow-xl z-10 min-w-[140px]">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Wavelength</p>
-                        <p className="text-sm font-extrabold text-slate-800 mb-2">1250 nm</p>
-                        <div className="flex items-center justify-between gap-4 mb-1">
-                          <span className="text-[10px] font-semibold text-slate-500">Raw</span>
-                          <span className="text-xs font-bold text-slate-700">0.432</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-[10px] font-semibold text-primary">Processed</span>
-                          <span className="text-xs font-bold text-primary">0.428</span>
-                        </div>
-                      </div>
-                      <div className="absolute bottom-6 left-8">
-                        <div className="bg-slate-50/80 backdrop-blur px-3 py-1 rounded-full border border-slate-100">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Spectral Density Analysis</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Metrics Grid */}
-                <div className="grid grid-cols-4 gap-6">
-                  {[
-                    { label: 'Signal Noise', value: '42.8', unit: 'dB', color: 'bg-primary' },
-                    { label: 'Mean Abs.', value: '0.824', unit: '', color: 'bg-blue-400' },
-                    { label: 'Std. Dev.', value: '0.012', unit: '', color: 'bg-amber-400' },
-                    { label: 'Samples', value: '128', unit: '', color: 'bg-indigo-400' },
-                  ].map((metric) => (
-                      <div key={metric.label} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-subtle flex flex-col justify-center">
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                          <span className={`size-1.5 ${metric.color} rounded-full`}></span> {metric.label}
-                        </p>
-                        <p className="text-2xl font-black text-slate-800">
-                          {metric.value} {metric.unit && <span className="text-xs font-bold text-slate-400">{metric.unit}</span>}
-                        </p>
-                      </div>
-                  ))}
-                </div>
+                <SpectralChart
+                  rawSeries={{
+                    wavelengths: spectralDatasets.raw.wavelengths,
+                    samples: rawSamples
+                  }}
+                  processedSeries={{
+                    wavelengths: spectralDatasets.processed.wavelengths,
+                    samples: processedSamples
+                  }}
+                  selectedComponent={selectedComponent}
+                />
               </div>
             </div>
           </main>
