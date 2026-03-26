@@ -5,11 +5,28 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLocation } from 'react-router-dom';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
 import Loading from '../components/Loading.jsx';
 
+function extractTrainingJobId(payload) {
+    return (
+        payload?.training_job_id ??
+        payload?.trainingJobId ??
+        payload?.job_id ??
+        payload?.jobId ??
+        payload?.id ??
+        null
+    );
+}
+
 export default function ModelSet() {
+    const location = useLocation();
+    const routedPreprocessingId = location.state?.preprocessingId ?? '';
+    const routedFileId = location.state?.fileId ?? '';
+    const routedComponent = location.state?.component ?? '';
+    const routedWavelengthsLength = Number(location.state?.wavelengthsLength ?? 0);
     const [activeTab, setActiveTab] = useState('regression');
     const [selectedRegressionModel, setSelectedRegressionModel] = useState('pls');
     const [selectedClassificationModel, setSelectedClassificationModel] = useState('svm');
@@ -17,6 +34,28 @@ export default function ModelSet() {
     const [svmKernel, setSvmKernel] = useState('linear');
     const [selectedHyperparameter, setSelectedHyperparameter] = useState('k_fold');
     const [showLoading, setShowLoading] = useState(false);
+    const [submitError, setSubmitError] = useState('');
+    const [preprocessingId] = useState(routedPreprocessingId);
+    const [selectedFileId] = useState(routedFileId);
+    const [selectedComponent] = useState(routedComponent);
+    const [wavelengthsLength] = useState(routedWavelengthsLength);
+    const [trainingJobId, setTrainingJobId] = useState(() => sessionStorage.getItem('training_job_id') || '');
+    const [plsComponents, setPlsComponents] = useState('12');
+    const [svrC, setSvrC] = useState('1.0');
+    const [svrTol, setSvrTol] = useState('0.001');
+    const [rfEstimators, setRfEstimators] = useState('100');
+    const [xgboostEstimators, setXgboostEstimators] = useState('100');
+    const [xgboostMaxDepth, setXgboostMaxDepth] = useState('6');
+    const [svmC, setSvmC] = useState('1.0');
+    const [svmTol, setSvmTol] = useState('0.001');
+    const [ldaEstimators, setLdaEstimators] = useState('');
+    const [kmeansNeighbors, setKmeansNeighbors] = useState('');
+    const [nClasses, setNClasses] = useState('');
+    const [gridSearchValue, setGridSearchValue] = useState('1');
+    const [kFoldValue, setKFoldValue] = useState('10');
+    const [evaluationResult, setEvaluationResult] = useState(null);
+    const [completedModelInfo, setCompletedModelInfo] = useState(null);
+    const [trainingSummary, setTrainingSummary] = useState(null);
 
     const selectRegressionModel = (id) => {
         setSelectedRegressionModel(id);
@@ -25,6 +64,201 @@ export default function ModelSet() {
     const selectClassificationModel = (id) => {
         setSelectedClassificationModel(id);
     };
+
+    const handleTrain = async () => {
+        if (!selectedFileId) {
+            setSubmitError('缺少 file_id，無法啟動模型訓練。');
+            return;
+        }
+
+        if (!preprocessingId) {
+            setSubmitError('缺少 preprocessing_id，無法啟動模型訓練。');
+            return;
+        }
+
+        if (activeTab === 'pca') {
+            setSubmitError('目前尚未支援 PCA 訓練 API。');
+            return;
+        }
+
+        const models = {};
+
+        if (activeTab === 'regression') {
+            if (selectedRegressionModel === 'pls') {
+                models.PLS = {
+                    enabled: true,
+                    params: {
+                        n_components: Number(plsComponents)
+                    }
+                };
+            }
+
+            if (selectedRegressionModel === 'svr') {
+                models.SVR = {
+                    enabled: true,
+                    params: {
+                        kernel: svrKernel,
+                        C: Number(svrC),
+                        tol: Number(svrTol)
+                    }
+                };
+            }
+
+            if (selectedRegressionModel === 'rf') {
+                models.RF = {
+                    enabled: true,
+                    params: {
+                        n_estimators: Number(rfEstimators)
+                    }
+                };
+            }
+
+            if (selectedRegressionModel === 'xgboost') {
+                models.XGBoost = {
+                    enabled: true,
+                    params: {
+                        n_estimators: Number(xgboostEstimators),
+                        max_depth: Number(xgboostMaxDepth)
+                    }
+                };
+            }
+
+            if (selectedRegressionModel === 'cnn') {
+                models.CNN = {
+                    enabled: true,
+                    params: {}
+                };
+            }
+        }
+
+        if (activeTab === 'classification') {
+            const classificationParams = nClasses ? { n_classes: Number(nClasses) } : {};
+
+            if (selectedClassificationModel === 'svm') {
+                models.SVM = {
+                    enabled: true,
+                    params: {
+                        ...classificationParams,
+                        kernel: svmKernel,
+                        C: Number(svmC),
+                        tol: Number(svmTol)
+                    }
+                };
+            }
+
+            if (selectedClassificationModel === 'lda') {
+                models.LDA = {
+                    enabled: true,
+                    params: {
+                        ...classificationParams,
+                        ...(ldaEstimators ? { n_estimators: Number(ldaEstimators) } : {})
+                    }
+                };
+            }
+
+            if (selectedClassificationModel === 'kmeans') {
+                models['K-means'] = {
+                    enabled: true,
+                    params: {
+                        ...classificationParams,
+                        ...(kmeansNeighbors ? { n_neighbors: Number(kmeansNeighbors) } : {})
+                    }
+                };
+            }
+        }
+
+        const payload = {
+            file_id: selectedFileId,
+            preprocessing_id: preprocessingId,
+            task_category: activeTab,
+            models,
+            hyperparameter_tuning: {
+                grid_search: selectedHyperparameter === 'grid_search',
+                k_fold: Number(kFoldValue)
+            }
+        };
+
+        console.log('[model-set] train payload', payload);
+        setTrainingSummary({
+            taskCategory: payload.task_category,
+            models: Object.keys(payload.models)
+        });
+        setTrainingJobId('');
+        sessionStorage.removeItem('training_job_id');
+        sessionStorage.removeItem('evaluation_result');
+        sessionStorage.removeItem('evaluation_model_detail');
+        setEvaluationResult(null);
+        setCompletedModelInfo(null);
+        setShowLoading(true);
+        setSubmitError('');
+
+        try {
+            const response = await fetch('/api/modeling/train', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const responseContentType = response.headers.get('content-type') || '';
+            const responseBody = responseContentType.includes('application/json')
+                ? await response.json().catch(() => null)
+                : await response.text().catch(() => '');
+
+            console.log('[model-set] train response', {
+                status: response.status,
+                ok: response.ok,
+                body: responseBody
+            });
+
+            if (!response.ok) {
+                const detail = typeof responseBody === 'string'
+                    ? responseBody
+                    : responseBody?.detail || responseBody?.message || JSON.stringify(responseBody);
+                throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+            }
+
+            const nextTrainingJobId = extractTrainingJobId(responseBody);
+            if (!nextTrainingJobId) {
+                throw new Error('模型訓練回應缺少 training_job_id');
+            }
+
+            setTrainingJobId(String(nextTrainingJobId));
+            sessionStorage.setItem('training_job_id', String(nextTrainingJobId));
+        } catch (error) {
+            console.log('[model-set] train error', error);
+            setSubmitError(error instanceof Error ? error.message : '模型訓練失敗');
+            setShowLoading(false);
+        }
+    };
+
+    if (showLoading) {
+        return (
+            <div className="flex h-screen overflow-hidden font-display">
+                <NavBar />
+                <div className="flex-1 flex flex-col min-w-0 bg-white">
+                    <main className="flex-1 overflow-y-auto custom-scrollbar">
+                        <Loading
+                            open={showLoading}
+                            trainingJobId={trainingJobId}
+                            trainingSummary={trainingSummary}
+                            onClose={() => setShowLoading(false)}
+                            onCompleted={({ evaluationResult: nextEvaluationResult, modelInfo }) => {
+                                setEvaluationResult(nextEvaluationResult);
+                                setCompletedModelInfo(modelInfo);
+                            }}
+                            onError={(error) => {
+                                console.log('[model-set] evaluation error', error);
+                                setSubmitError(error instanceof Error ? error.message : '取得評估結果失敗');
+                                setShowLoading(false);
+                            }}
+                        />
+                    </main>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen overflow-hidden font-display">
@@ -87,7 +321,12 @@ export default function ModelSet() {
                                             inputName="regression_model"
                                         >
                                             <div className="space-y-4">
-                                                <InputGroup label="Components:" defaultValue="12" />
+                                                <InputGroup
+                                                    label="Components:"
+                                                    value={plsComponents}
+                                                    onChange={setPlsComponents}
+                                                    hint="1 < components < 50"
+                                                />
                                             </div>
                                         </ModelCard>
                                         <ModelCard
@@ -115,8 +354,20 @@ export default function ModelSet() {
                                                 </div>
                                                 {svrKernel === 'rbf' && (
                                                     <>
-                                                        <InputGroup label="C:" placeholder="" />
-                                                        <InputGroup label="tol:" placeholder="" />
+                                                        <InputGroup
+                                                            label="C:"
+                                                            value={svrC}
+                                                            onChange={setSvrC}
+                                                            placeholder=""
+                                                            hint="1.0 < C < 100"
+                                                        />
+                                                        <InputGroup
+                                                            label="tol:"
+                                                            value={svrTol}
+                                                            onChange={setSvrTol}
+                                                            placeholder=""
+                                                            hint="1e⁻⁵ < tol <  1e⁻¹"
+                                                        />
                                                     </>
                                                 )}
                                             </div>
@@ -129,7 +380,12 @@ export default function ModelSet() {
                                             inputType="radio"
                                             inputName="regression_model"
                                         >
-                                            <InputGroup label="n_estimators:" defaultValue="100" />
+                                            <InputGroup
+                                                label="n_estimators:"
+                                                value={rfEstimators}
+                                                onChange={setRfEstimators}
+                                                hint="10<=n_estimators <=200"
+                                            />
                                         </ModelCard>
                                         <ModelCard
                                             id="xgboost"
@@ -140,8 +396,18 @@ export default function ModelSet() {
                                             inputName="regression_model"
                                         >
                                             <div className="space-y-3">
-                                                <InputGroup label="n_estimators:" defaultValue="100" />
-                                                <InputGroup label="max_depth:" defaultValue="6" />
+                                                <InputGroup
+                                                    label="n_estimators:"
+                                                    value={xgboostEstimators}
+                                                    onChange={setXgboostEstimators}
+                                                    hint="10 <= n_estimators <= 200"
+                                                />
+                                                <InputGroup
+                                                    label="max_depth:"
+                                                    value={xgboostMaxDepth}
+                                                    onChange={setXgboostMaxDepth}
+                                                    hint="1 <= max_depth <= 12"
+                                                />
                                             </div>
                                         </ModelCard>
                                         <ModelCard
@@ -158,58 +424,99 @@ export default function ModelSet() {
                                 )}
 
                                 {activeTab === 'classification' && (
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                                        <ModelCard
-                                            id="svm"
-                                            title="SVM"
-                                            selected={selectedClassificationModel === 'svm'}
-                                            onToggle={() => selectClassificationModel('svm')}
-                                            inputType="radio"
-                                            inputName="classification_model"
-                                        >
-                                            <div className="space-y-4">
-                                                <div className="space-y-2">
-                                                    <RadioOption
-                                                        label="linear"
-                                                        name="svm_kernel"
-                                                        checked={svmKernel === 'linear'}
-                                                        onChange={() => setSvmKernel('linear')}
-                                                    />
-                                                    <RadioOption
-                                                        label="RBF"
-                                                        name="svm_kernel"
-                                                        checked={svmKernel === 'rbf'}
-                                                        onChange={() => setSvmKernel('rbf')}
-                                                    />
-                                                </div>
-                                                {svmKernel === 'rbf' && (
-                                                    <>
-                                                        <InputGroup label="C:" placeholder="" />
-                                                        <InputGroup label="tol:" placeholder="" />
-                                                    </>
-                                                )}
+                                    <div className="space-y-4">
+                                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                                            <div className="max-w-xs">
+                                                <InputGroup
+                                                    label="n_classes:"
+                                                    value={nClasses}
+                                                    onChange={setNClasses}
+                                                    placeholder=""
+                                                />
                                             </div>
-                                        </ModelCard>
-                                        <ModelCard
-                                            id="lda"
-                                            title="LDA"
-                                            selected={selectedClassificationModel === 'lda'}
-                                            onToggle={() => selectClassificationModel('lda')}
-                                            inputType="radio"
-                                            inputName="classification_model"
-                                        >
-                                            <InputGroup label="n_estimators:" placeholder="" />
-                                        </ModelCard>
-                                        <ModelCard
-                                            id="kmeans"
-                                            title="K-means"
-                                            selected={selectedClassificationModel === 'kmeans'}
-                                            onToggle={() => selectClassificationModel('kmeans')}
-                                            inputType="radio"
-                                            inputName="classification_model"
-                                        >
-                                            <InputGroup label="n_neighbors:" placeholder="" />
-                                        </ModelCard>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                                            <ModelCard
+                                                id="svm"
+                                                title="SVM"
+                                                selected={selectedClassificationModel === 'svm'}
+                                                onToggle={() => selectClassificationModel('svm')}
+                                                inputType="radio"
+                                                inputName="classification_model"
+                                            >
+                                                <div className="space-y-4">
+                                                    <div className="space-y-2">
+                                                        <RadioOption
+                                                            label="linear"
+                                                            name="svm_kernel"
+                                                            checked={svmKernel === 'linear'}
+                                                            onChange={() => setSvmKernel('linear')}
+                                                        />
+                                                        <RadioOption
+                                                            label="RBF"
+                                                            name="svm_kernel"
+                                                            checked={svmKernel === 'rbf'}
+                                                            onChange={() => setSvmKernel('rbf')}
+                                                        />
+                                                    </div>
+                                                    {svmKernel === 'rbf' && (
+                                                        <>
+                                                            <InputGroup
+                                                                label="C:"
+                                                                value={svmC}
+                                                                onChange={setSvmC}
+                                                                placeholder=""
+                                                                hint="1.0 < C < 100"
+                                                            />
+                                                            <InputGroup
+                                                                label="tol:"
+                                                                value={svmTol}
+                                                                onChange={setSvmTol}
+                                                                placeholder=""
+                                                                hint="1e⁻¹ < tol < 1e⁻⁵"
+                                                            />
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </ModelCard>
+                                            <ModelCard
+                                                id="lda"
+                                                title="LDA"
+                                                selected={selectedClassificationModel === 'lda'}
+                                                onToggle={() => selectClassificationModel('lda')}
+                                                inputType="radio"
+                                                inputName="classification_model"
+                                            >
+                                                <div className="space-y-4">
+                                                    <InputGroup
+                                                        label="n_estimators:"
+                                                        value={ldaEstimators}
+                                                        onChange={setLdaEstimators}
+                                                        placeholder=""
+                                                        hint="min(n_classes - 1, wavelengths.length) < n_components <= 10"
+                                                    />
+                                                    <p className="text-[11px] font-medium text-amber-600">
+                                                        wavelengths.length: {wavelengthsLength}
+                                                    </p>
+                                                </div>
+                                            </ModelCard>
+                                            <ModelCard
+                                                id="kmeans"
+                                                title="K-means"
+                                                selected={selectedClassificationModel === 'kmeans'}
+                                                onToggle={() => selectClassificationModel('kmeans')}
+                                                inputType="radio"
+                                                inputName="classification_model"
+                                            >
+                                                <InputGroup
+                                                    label="n_neighbors:"
+                                                    value={kmeansNeighbors}
+                                                    onChange={setKmeansNeighbors}
+                                                    placeholder=""
+                                                    hint="2<= n_neighbors <= 10"
+                                                />
+                                            </ModelCard>
+                                        </div>
                                     </div>
                                 )}
 
@@ -273,7 +580,12 @@ export default function ModelSet() {
                                     </div>
                                     {selectedHyperparameter === 'grid_search' && (
                                         <div className="flex flex-1 flex-col items-end gap-3 ml-auto">
-                                            <input className="w-full max-w-[120px] bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none" type="text" defaultValue="1" />
+                                            <input
+                                                className="w-full max-w-[120px] bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none"
+                                                type="text"
+                                                value={gridSearchValue}
+                                                onChange={(event) => setGridSearchValue(event.target.value)}
+                                            />
                                             <p className="max-w-[310px] text-[12px] leading-relaxed text-amber-600 text-right">
                                                 Grid Search 會大幅增加運算時間，可能需要較長等待時間
                                             </p>
@@ -295,24 +607,48 @@ export default function ModelSet() {
                                         </div>
                                     </div>
                                     {selectedHyperparameter === 'k_fold' && (
-                                        <div className="flex items-center gap-3 flex-1 max-w-[120px] ml-auto">
-                                            <input className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-1.5 px-3 focus:ring-1 focus:ring-[#659475] outline-none" type="text" defaultValue="10" />
+                                        <div className="flex items-center gap-4 flex-1 max-w-[200px] ml-auto">
+                                            <span className="text-[10px] font-medium text-amber-500 whitespace-nowrap">1 &lt;= k-fold &lt;= 10</span>
+                                            <input
+                                                className="w-full min-w-[90px] bg-slate-50 border border-slate-200 rounded-lg text-right text-sm py-2.5 px-4 focus:ring-1 focus:ring-[#659475] outline-none"
+                                                type="text"
+                                                value={kFoldValue}
+                                                onChange={(event) => setKFoldValue(event.target.value)}
+                                            />
                                         </div>
                                     )}
                                 </div>
                             </div>
                         </div>
+                        {submitError && (
+                            <p className="mt-6 text-sm font-semibold text-red-600">{submitError}</p>
+                        )}
+                        {trainingJobId && (
+                            <p className="mt-3 text-sm font-semibold text-slate-600">
+                                training_job_id: {trainingJobId}
+                            </p>
+                        )}
+                        {evaluationResult && completedModelInfo && (
+                            <p className="mt-3 text-sm font-semibold text-emerald-700">
+                                最新訓練任務已完成，可前往評估匯出頁面查看結果。
+                            </p>
+                        )}
                     </div>
                 </main>
 
                 <Footer
                     primaryLabel="下一步:確定訓練"
-                    onPrimaryClick={() => setShowLoading(true)}
+                    onPrimaryClick={handleTrain}
                     secondaryLabel="上一步"
                     secondaryTo="/preprocessing"
+                    secondaryState={{
+                        preprocessingId,
+                        fileId: selectedFileId,
+                        component: selectedComponent,
+                        wavelengthsLength
+                    }}
                 />
             </div>
-            <Loading open={showLoading} onClose={() => setShowLoading(false)} />
         </div>
     );
 }
@@ -373,14 +709,18 @@ function ModelCard({ id, title, selected, onToggle, children, inputType = 'check
     );
 }
 
-function InputGroup({ label, defaultValue, placeholder }) {
+function InputGroup({ label, value, onChange, defaultValue, placeholder, hint }) {
     return (
         <div>
-            <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">{label}</label>
+            <div className="mb-1 flex items-center justify-between gap-2">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">{label}</label>
+                {hint ? <span className="text-[10px] font-medium text-amber-500">{hint}</span> : null}
+            </div>
             <input
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-2 px-3 focus:ring-1 focus:ring-[#659475] focus:border-[#659475] outline-none"
                 type="text"
-                defaultValue={defaultValue}
+                value={value ?? defaultValue ?? ''}
+                onChange={(event) => onChange?.(event.target.value)}
                 placeholder={placeholder}
             />
         </div>

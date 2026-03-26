@@ -8,12 +8,29 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
         name: `${sample.label} | 原始光譜`,
         type: 'line',
         symbol: 'none',
+        showSymbol: false,
         smooth: true,
         data: sample.spectra,
         lineStyle: {
           color: '#cbd5e1',
           width: 1.5,
+          opacity: 1,
           type: 'dashed'
+        },
+        emphasis: {
+          focus: 'none',
+          scale: false,
+          lineStyle: {
+            color: '#cbd5e1',
+            width: 1.5,
+            opacity: 1,
+            type: 'dashed'
+          }
+        },
+        blur: {
+          lineStyle: {
+            opacity: 1
+          }
         },
         meta: {
           label: sample.label,
@@ -28,11 +45,27 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
         name: `${sample.label} | 處理後光譜`,
         type: 'line',
         symbol: 'none',
+        showSymbol: false,
         smooth: true,
         data: sample.spectra,
         lineStyle: {
           color: `hsl(${(index * 37) % 360} 35% 48%)`,
-          width: 2.2
+          width: 2.2,
+          opacity: 1
+        },
+        emphasis: {
+          focus: 'none',
+          scale: false,
+          lineStyle: {
+            color: `hsl(${(index * 37) % 360} 35% 48%)`,
+            width: 2.2,
+            opacity: 1
+          }
+        },
+        blur: {
+          lineStyle: {
+            opacity: 1
+          }
         },
         meta: {
           label: sample.label,
@@ -52,11 +85,25 @@ export default function SpectralChart({
 }) {
   const chartRef = useRef(null);
   const expandedChartRef = useRef(null);
-  const [visibleSeries, setVisibleSeries] = useState('processed');
+  const [visibleSeries, setVisibleSeries] = useState('raw');
   const [isExpanded, setIsExpanded] = useState(false);
-  const wavelengths = rawSeries.wavelengths.length > 0
-    ? rawSeries.wavelengths
-    : processedSeries.wavelengths;
+  const wavelengths = useMemo(() => {
+    if (visibleSeries === 'raw') {
+      return rawSeries.wavelengths.length > 0
+        ? rawSeries.wavelengths
+        : processedSeries.wavelengths;
+    }
+
+    if (visibleSeries === 'processed') {
+      return processedSeries.wavelengths.length > 0
+        ? processedSeries.wavelengths
+        : rawSeries.wavelengths;
+    }
+
+    return processedSeries.wavelengths.length > 0
+      ? processedSeries.wavelengths
+      : rawSeries.wavelengths;
+  }, [processedSeries.wavelengths, rawSeries.wavelengths, visibleSeries]);
   const series = useMemo(
     () => buildSeries(rawSeries, processedSeries, visibleSeries),
     [processedSeries, rawSeries, visibleSeries]
@@ -68,7 +115,7 @@ export default function SpectralChart({
       return undefined;
     }
 
-    const chart = echarts.init(container);
+    const chart = echarts.getInstanceByDom(container) ?? echarts.init(container);
 
     chart.setOption({
       animationDuration: 400,
@@ -105,6 +152,14 @@ export default function SpectralChart({
       },
       tooltip: {
         trigger: 'axis',
+        axisPointer: {
+          type: 'line',
+          snap: true,
+          lineStyle: {
+            color: '#cbd5e1',
+            width: 1
+          }
+        },
         backgroundColor: '#ffffff',
         borderColor: '#e2e8f0',
         borderWidth: 1,
@@ -218,7 +273,7 @@ export default function SpectralChart({
         }
       ],
       series
-    });
+    }, true);
 
     if (series.length === 0 || wavelengths.length === 0) {
       chart.showLoading({

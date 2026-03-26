@@ -98,6 +98,10 @@ export default function Preprocessing() {
   const [derivativeOrder, setDerivativeOrder] = useState('1');
   const [normalizationType, setNormalizationType] = useState('mean');
   const [wavelengthMethod, setWavelengthMethod] = useState('manual_clip');
+  const [manualStart, setManualStart] = useState('1000');
+  const [manualEnd, setManualEnd] = useState('1500');
+  const [vipThreshold, setVipThreshold] = useState('1.2');
+  const [rfTopN, setRfTopN] = useState('20');
   const [carsIterations, setCarsIterations] = useState('20');
   const [carsKFold, setCarsKFold] = useState('3');
   const [selectedFileId, setSelectedFileId] = useState('');
@@ -164,23 +168,28 @@ export default function Preprocessing() {
       }
 
       try {
-        const previewResponse = await fetch(`/api/upload/${selectedFileId}/preview`, {
+        const rawEndpoint = baseline
+          ? `/api/upload/${selectedFileId}/absorbance`
+          : `/api/upload/${selectedFileId}/preview`;
+        const rawResponse = await fetch(rawEndpoint, {
           headers: {
             Accept: 'application/json'
           }
         });
 
-        if (!previewResponse.ok) {
-          throw new Error(`GET /api/upload/${selectedFileId}/preview failed with HTTP ${previewResponse.status}`);
+        if (!rawResponse.ok) {
+          throw new Error(`GET ${rawEndpoint} failed with HTTP ${rawResponse.status}`);
         }
 
-        const previewPayload = await previewResponse.json().catch(() => null);
+        const rawPayload = await rawResponse.json().catch(() => null);
 
-        const rawDataset = extractSpectralDataset(previewPayload);
+        const rawDataset = extractSpectralDataset(rawPayload);
         const nextComponents = rawDataset.componentOptions;
 
         console.log('[preprocessing] spectral datasets', {
           fileId: selectedFileId,
+          baseline,
+          rawEndpoint,
           rawDataset,
           nextComponents
         });
@@ -206,7 +215,7 @@ export default function Preprocessing() {
     };
 
     loadSpectralDatasets();
-  }, [selectedFileId]);
+  }, [selectedFileId, baseline]);
 
   const resetSettings = () => {
     setBaseline(true);
@@ -219,6 +228,10 @@ export default function Preprocessing() {
     setDerivativeOrder('1');
     setNormalizationType('mean');
     setWavelengthMethod('manual_clip');
+    setManualStart('1000');
+    setManualEnd('1500');
+    setVipThreshold('1.2');
+    setRfTopN('20');
     setCarsIterations('20');
     setCarsKFold('3');
     setSubmitError('');
@@ -233,6 +246,44 @@ export default function Preprocessing() {
     if (!selectedComponent) {
       setSubmitError('缺少 component，請先選擇 component。');
       return;
+    }
+
+    if (wavelengthMethod === 'manual_clip') {
+      const start = Number(manualStart);
+      const end = Number(manualEnd);
+
+      if (!manualStart || !manualEnd || Number.isNaN(start) || Number.isNaN(end)) {
+        setSubmitError('Manual Clipping 需要填寫有效的 manual_start 與 manual_end。');
+        return;
+      }
+
+      if (start >= end) {
+        setSubmitError('manual_start 必須小於 manual_end。');
+        return;
+      }
+    }
+
+    if (wavelengthMethod === 'VIP') {
+      const threshold = Number(vipThreshold);
+
+      if (!vipThreshold || Number.isNaN(threshold)) {
+        setSubmitError('VIP 需要填寫有效的 vip_threshold。');
+        return;
+      }
+    }
+
+    if (wavelengthMethod === 'RF_Feature_Importance') {
+      const topN = Number(rfTopN);
+
+      if (!rfTopN || Number.isNaN(topN) || !Number.isInteger(topN)) {
+        setSubmitError('RF Feature Importance 需要填寫有效的整數 top_n。');
+        return;
+      }
+
+      if (topN < 1 || topN > 20) {
+        setSubmitError('RF Feature Importance 的 top_n 只能介於 1 到 20。');
+        return;
+      }
     }
 
     const methods = {};
@@ -268,6 +319,19 @@ export default function Preprocessing() {
       method: wavelengthMethod
     };
 
+    if (wavelengthMethod === 'manual_clip') {
+      methods.wavelength_selection.manual_start = Number(manualStart);
+      methods.wavelength_selection.manual_end = Number(manualEnd);
+    }
+
+    if (wavelengthMethod === 'VIP') {
+      methods.wavelength_selection.vip_threshold = Number(vipThreshold);
+    }
+
+    if (wavelengthMethod === 'RF_Feature_Importance') {
+      methods.wavelength_selection.top_n = Number(rfTopN);
+    }
+
     if (wavelengthMethod === 'CARS') {
       methods.wavelength_selection.n_iters = Number(carsIterations);
       methods.wavelength_selection.k_fold = Number(carsKFold);
@@ -292,6 +356,10 @@ export default function Preprocessing() {
       normalization,
       normalizationType,
       wavelengthMethod,
+      manualStart,
+      manualEnd,
+      vipThreshold,
+      rfTopN,
       carsIterations,
       carsKFold
     });
@@ -441,6 +509,22 @@ export default function Preprocessing() {
         componentsValue: sample.components?.[selectedComponent]
       }))
     : [];
+  const spectralSummaries = [
+    {
+      key: 'raw',
+      title: '原始光譜',
+      labelCount: rawSamples.length,
+      component: selectedComponent || '--',
+      wavelengthCount: spectralDatasets.raw.wavelengths.length
+    },
+    {
+      key: 'processed',
+      title: '前處理結果',
+      labelCount: processedSamples.length,
+      component: selectedComponent || '--',
+      wavelengthCount: spectralDatasets.processed.wavelengths.length
+    }
+  ];
 
   return (
       <div className="h-screen flex overflow-hidden font-display">
@@ -534,18 +618,24 @@ export default function Preprocessing() {
                         {sg && (
                           <div className="grid grid-cols-2 gap-3 pl-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">Window size</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Window size</label>
+                                <span className="text-[10px] font-medium text-amber-500">1&lt;window size&lt;=21</span>
+                              </div>
                               <input
                                 value={sgWindowSize}
                                 onChange={(event) => setSgWindowSize(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
-                                placeholder="11"
+                                placeholder="2"
                                 type="number"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                                <span className="text-[10px] font-medium text-amber-500">0&lt;次方&lt;=5</span>
+                              </div>
                               <input
                                 value={sgPolynomialOrder}
                                 onChange={(event) => setSgPolynomialOrder(event.target.value)}
@@ -643,7 +733,7 @@ export default function Preprocessing() {
                                 value={carsIterations}
                                 onChange={(event) => setCarsIterations(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
-                                placeholder="20"
+                                placeholder="10"
                                 type="number"
                               />
                             </div>
@@ -659,6 +749,67 @@ export default function Preprocessing() {
                             </div>
                           </div>
                         )}
+                        {wavelengthMethod === 'VIP' && (
+                          <div className="pl-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">vip_threshold</label>
+                              <input
+                                value={vipThreshold}
+                                onChange={(event) => setVipThreshold(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="1.2"
+                                type="number"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {wavelengthMethod === 'RF_Feature_Importance' && (
+                          <div className="pl-2">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">top_n</label>
+                                <span className="text-[10px] font-semibold text-amber-600">上限 20</span>
+                              </div>
+                              <input
+                                value={rfTopN}
+                                onChange={(event) => setRfTopN(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="20"
+                                type="number"
+                                min="1"
+                                max="20"
+                                step="1"
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {wavelengthMethod === 'manual_clip' && (
+                          <div className="grid grid-cols-2 gap-3 pl-2">
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">manual_start</label>
+                              <input
+                                value={manualStart}
+                                onChange={(event) => setManualStart(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="1000"
+                                type="number"
+                                step="any"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">manual_end</label>
+                              <input
+                                value={manualEnd}
+                                onChange={(event) => setManualEnd(event.target.value)}
+                                className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
+                                placeholder="1500"
+                                type="number"
+                                step="any"
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                     </div>
@@ -667,13 +818,13 @@ export default function Preprocessing() {
 
                 </div>
                 <div className="flex gap-4">
-                  <button
-                    type="button"
-                    onClick={resetSettings}
-                    className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"
-                  >
-                    <RotateCcw size={18} /> 重置
-                  </button>
+                  {/*<button*/}
+                  {/*  type="button"*/}
+                  {/*  onClick={resetSettings}*/}
+                  {/*  className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm"*/}
+                  {/*>*/}
+                  {/*  <RotateCcw size={18} /> 重置*/}
+                  {/*</button>*/}
                   <button
                     type="button"
                     onClick={handleApplySettings}
@@ -701,15 +852,50 @@ export default function Preprocessing() {
                   }}
                   selectedComponent={selectedComponent}
                 />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {spectralSummaries.map((summary) => (
+                    <div
+                      key={summary.key}
+                      className="rounded-2xl border border-slate-100 bg-white px-6 py-5 shadow-subtle"
+                    >
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                        {summary.title}
+                      </p>
+                      <div className="mt-4 space-y-2 text-sm text-slate-600">
+                        <p>
+                          <span className="font-semibold text-slate-900">Label 數量：</span>
+                          {summary.labelCount}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-900">Component：</span>
+                          {summary.component}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-900">wavelengths：</span>
+                          {summary.wavelengthCount}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </main>
 
-          <Footer
-            primaryLabel="下一步：模型設定"
-            primaryTo="/modelSet"
+            <Footer
+              primaryLabel="下一步：模型設定"
+              primaryTo="/modelSet"
+              primaryState={{
+              preprocessingId,
+              fileId: selectedFileId,
+              component: selectedComponent,
+              wavelengthsLength: spectralDatasets.processed.wavelengths.length
+            }}
             secondaryLabel="上一步"
             secondaryTo="/"
+            secondaryState={{
+              fileId: selectedFileId
+            }}
           />
         </div>
       </div>

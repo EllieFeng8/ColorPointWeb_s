@@ -249,7 +249,7 @@ export default function EvaluatioClassify() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.1 }}
-                className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col gap-6"
+                className="min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col gap-6"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -266,7 +266,7 @@ export default function EvaluatioClassify() {
                   </button>
                 </div>
 
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-w-0 min-h-[12rem]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={trainingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -296,7 +296,7 @@ export default function EvaluatioClassify() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.2 }}
-                className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col gap-6"
+                className="min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col gap-6"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -313,7 +313,7 @@ export default function EvaluatioClassify() {
                   </button>
                 </div>
 
-                <div className="h-48 w-full bg-slate-50/30 border border-slate-100 rounded overflow-hidden">
+                <div className="h-48 w-full min-w-0 min-h-[12rem] bg-slate-50/30 border border-slate-100 rounded overflow-hidden">
                   <ResponsiveContainer width="100%" height="100%">
                     <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -346,7 +346,7 @@ export default function EvaluatioClassify() {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.3 }}
-                className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col h-full"
+                className="min-w-0 bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col h-full"
               >
                 <div className="mb-6">
                   <h3 className="font-bold text-slate-800">模型匯出 (Model Export)</h3>
