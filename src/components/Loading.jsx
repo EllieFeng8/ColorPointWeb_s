@@ -1,37 +1,104 @@
 import React from 'react';
-import { ArrowRight, Settings } from 'lucide-react';
+import { AlertCircle, ArrowRight, Settings } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 
+const POLL_INTERVAL_MS = 3000;
+
 function formatModels(models) {
-  if (Array.isArray(models)) {
-    return models.join(', ');
+  if (!models || typeof models !== 'object') {
+    return '--';
   }
 
-  if (models && typeof models === 'object') {
-    return Object.keys(models).join(', ');
+  const enabledModels = Object.entries(models)
+    .filter(([, config]) => config?.enabled === true)
+    .map(([name]) => name);
+
+  return enabledModels.length ? enabledModels.join(', ') : '--';
+}
+
+function normalizeTrainingDetail(detail) {
+  return {
+    taskCategory: detail?.task_category ?? '--',
+    models: formatModels(detail?.models),
+    status: detail?.status ?? '--',
+    errorMessage: detail?.status === 'error' ? (detail?.error_message ?? '') : '',
+  };
+}
+
+function getResponseMessage(body, fallback) {
+  if (typeof body === 'string') {
+    return body || fallback;
   }
 
-  return models ? String(models) : '--';
+  return body?.detail || body?.message || fallback;
 }
 
 export default function Loading({
   open,
   onClose,
   trainingJobId,
-  trainingSummary,
   progress = 45,
   statusText = '正在建立訓練任務...',
-  modelInfo = null,
   completionState = null,
   secondaryLabel,
   secondaryTo
 }) {
-  const resolvedModelInfo = modelInfo ?? (trainingSummary ? {
-    taskCategory: trainingSummary.taskCategory ?? '--',
-    models: trainingSummary.models ?? '--',
-    status: trainingJobId ? 'running' : 'creating'
-  } : null);
+  const [trainingDetail, setTrainingDetail] = React.useState(null);
+  const [detailError, setDetailError] = React.useState('');
+
+  React.useEffect(() => {
+    if (!open || !trainingJobId) {
+      setTrainingDetail(null);
+      setDetailError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const fetchTrainingDetail = async () => {
+      try {
+        const response = await fetch(`/api/modeling/${encodeURIComponent(trainingJobId)}`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const body = contentType.includes('application/json')
+          ? await response.json().catch(() => null)
+          : await response.text().catch(() => '');
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${getResponseMessage(body, '取得訓練任務詳情失敗')}`);
+        }
+
+        setTrainingDetail(body);
+        setDetailError('');
+      } catch (error) {
+        if (!cancelled) {
+          setTrainingDetail(null);
+          setDetailError(error instanceof Error ? error.message : '取得訓練任務詳情失敗');
+        }
+      }
+    };
+
+    fetchTrainingDetail();
+    const pollTimer = window.setInterval(fetchTrainingDetail, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(pollTimer);
+    };
+  }, [open, trainingJobId]);
+
+  const detail = React.useMemo(() => normalizeTrainingDetail(trainingDetail), [trainingDetail]);
+  const isEvaluationDisabled = detail.status === 'error';
 
   return (
     <AnimatePresence>
@@ -46,10 +113,10 @@ export default function Loading({
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
-            className="w-full max-w-3xl rounded-3xl border border-gray-100 bg-white p-10 shadow-xl text-center"
+            className="w-full max-w-3xl rounded-3xl border border-gray-100 bg-white p-10 text-center shadow-xl"
           >
-            <div className="mb-6 relative inline-block">
-              <div className="w-20 h-20 rounded-full border-4 border-gray-100 flex items-center justify-center">
+            <div className="relative mb-6 inline-block">
+              <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-gray-100">
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
@@ -57,31 +124,44 @@ export default function Loading({
                   <Settings size={32} className="text-primary" />
                 </motion.div>
               </div>
-              <div className="absolute -top-2 -right-2 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg">
+              <div className="absolute -top-2 -right-2 rounded-full bg-primary px-2 py-1 text-[10px] font-bold text-white shadow-lg">
                 {progress}%
               </div>
             </div>
 
-            <div className="space-y-2 mb-8">
+            <div className="mb-8 space-y-2">
               <h4 className="text-xl font-bold text-gray-800">模型訓練中...</h4>
               <p className="text-sm text-gray-500">{statusText}</p>
+              {trainingJobId ? (
+                <p className="text-xs font-semibold text-slate-400">training_job_id: {trainingJobId}</p>
+              ) : null}
+              {detailError ? (
+                <p className="text-xs font-medium text-red-600">{detailError}</p>
+              ) : null}
             </div>
 
-            {resolvedModelInfo ? (
-              <div className="mb-8 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 text-left space-y-2">
-                <p className="text-xs font-semibold text-gray-500">
-                  task_category: <span className="text-gray-700">{resolvedModelInfo.taskCategory}</span>
-                </p>
-                <p className="text-xs font-semibold text-gray-500">
-                  models: <span className="text-gray-700">{formatModels(resolvedModelInfo.models)}</span>
-                </p>
-                <p className="text-xs font-semibold text-gray-500">
-                  status: <span className="text-gray-700">{resolvedModelInfo.status}</span>
-                </p>
-              </div>
-            ) : null}
+            <div className="mb-8 space-y-2 rounded-2xl border border-gray-100 bg-gray-50 px-5 py-4 text-left">
+              <p className="text-xs font-semibold text-gray-500">
+                task_category: <span className="text-gray-700">{detail.taskCategory}</span>
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                models: <span className="text-gray-700">{detail.models}</span>
+              </p>
+              <p className="text-xs font-semibold text-gray-500">
+                status: <span className="text-gray-700">{detail.status}</span>
+              </p>
+              {detail.errorMessage ? (
+                <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3">
+                  <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-600" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-700">error_message</p>
+                    <p className="mt-1 text-xs font-medium leading-relaxed text-red-600">{detail.errorMessage}</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
-            <div className="w-full bg-gray-100 h-2 rounded-full mb-8 overflow-hidden">
+            <div className="mb-8 h-2 w-full overflow-hidden rounded-full bg-gray-100">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${progress}%` }}
@@ -91,33 +171,37 @@ export default function Loading({
 
             <div className="flex flex-col gap-3 sm:flex-row">
               {completionState ? (
-                <Link
-                  to="/evaluatioClassify"
-                  state={{
-                    trainingJobId,
-                    evaluationResult: completionState.evaluationResult,
-                    modelInfo: completionState.modelInfo
-                  }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-[#82b091] px-4 py-3 font-semibold text-white transition-all hover:bg-[#659475]"
-                >
-                  前往評估匯出
-                  <ArrowRight size={18} />
-                </Link>
+                isEvaluationDisabled ? (
+                  <span className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-300 px-4 py-3 font-semibold text-white">
+                    前往評估匯出
+                    <ArrowRight size={18} />
+                  </span>
+                ) : (
+                  <Link
+                    to="/evaluatioClassify"
+                    state={{ trainingJobId }}
+                    className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#82b091] px-4 py-3 font-semibold text-white transition-all hover:bg-[#659475]"
+                  >
+                    前往評估匯出
+                    <ArrowRight size={18} />
+                  </Link>
+                )
               ) : null}
 
               {secondaryTo ? (
                 <Link
                   to={secondaryTo}
-                  className="flex-1 py-3 px-4 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95 inline-flex items-center justify-center"
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-gray-200 px-4 py-3 font-medium text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-95"
                 >
-                  {secondaryLabel ?? (completionState ? '返回模型建構' : '返回模型建構')}
+                  {secondaryLabel ?? '返回模型建構'}
                 </Link>
               ) : (
                 <button
+                  type="button"
                   onClick={onClose}
-                  className="flex-1 py-3 px-4 border border-gray-200 text-gray-600 rounded-xl font-medium hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-95"
+                  className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-medium text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-95"
                 >
-                  {secondaryLabel ?? (completionState ? '返回模型建構' : '返回模型建構')}
+                  {secondaryLabel ?? '返回模型建構'}
                 </button>
               )}
             </div>

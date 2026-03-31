@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileText, CloudUpload, Trash2, CheckCircle2 } from 'lucide-react';
+import swal from 'sweetalert';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
 
@@ -119,6 +120,10 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const selectedFile = files[0] ?? null;
+
+  const showImportSuccessAlert = () => {
+    swal('SweetAlert 已導入', '你現在可以在 React 元件內直接呼叫 swal(...)。', 'success');
+  };
 
   const fetchUploadSummary = async (rowId, uploadRecordId) => {
     const response = await fetch(uploadEndpoint, {
@@ -263,6 +268,7 @@ export default function Home() {
         name: selectedFile.name,
         reason: 'Only .csv files are allowed.'
       });
+      swal('檔案格式錯誤', '目前只允許上傳 .csv 檔案。', 'warning');
       return;
     }
 
@@ -279,8 +285,21 @@ export default function Home() {
       return;
     }
 
+    const shouldDelete = await swal({
+      title: '確認刪除',
+      text: `確定要刪除 ${targetFile.name} 嗎？`,
+      icon: 'warning',
+      buttons: ['取消', '刪除'],
+      dangerMode: true
+    });
+
+    if (!shouldDelete) {
+      return;
+    }
+
     if (!targetFile.fileId) {
       setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+      await swal('已刪除', '檔案已從列表移除。', 'success');
       return;
     }
 
@@ -317,6 +336,7 @@ export default function Home() {
       }
 
       setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+      await swal('已刪除', '檔案已成功刪除。', 'success');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '刪除檔案失敗';
       setFiles((currentFiles) =>
@@ -330,6 +350,7 @@ export default function Home() {
             : file
         )
       );
+      await swal('刪除失敗', errorMessage, 'error');
     }
   };
 
@@ -400,6 +421,13 @@ export default function Home() {
                 請上傳或拖放單一 .csv 光譜數據檔案
               </motion.p>
             </div>
+            <button
+              type="button"
+              onClick={showImportSuccessAlert}
+              className="rounded-xl border border-[#82b091]/20 bg-[#82b091]/10 px-5 py-3 text-sm font-bold text-[#659475] transition-colors hover:bg-[#82b091]/20"
+            >
+              測試 SweetAlert
+            </button>
           </header>
 
           <section>

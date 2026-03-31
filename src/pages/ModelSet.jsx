@@ -235,7 +235,9 @@ export default function ModelSet() {
         console.log('[model-set] train payload', payload);
         const nextTrainingSummary = {
             taskCategory: payload.task_category,
-            models: Object.keys(payload.models)
+            models: Object.entries(payload.models)
+                .filter(([, config]) => config?.enabled === true)
+                .map(([name]) => name)
         };
         beginTraining(nextTrainingSummary);
         setShowLoading(true);
