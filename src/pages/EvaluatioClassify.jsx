@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download, Tag, Info, History, ExternalLink } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Download, Tag, Info, ExternalLink } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -7,7 +7,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   ScatterChart,
   Scatter,
   Line,
@@ -16,8 +15,9 @@ import {
 import { motion } from 'motion/react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useLocation } from 'react-router-dom';
 import NavBar from '@/src/components/NavBar.jsx';
-import Header from "@/src/components/Header.jsx";
+import { useTraining } from '../context/TrainingContext.jsx';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -51,6 +51,7 @@ function toCsv(rows) {
 }
 
 function downloadCsv(filename, rows) {
+  // Prefix with BOM so Excel opens UTF-8 CSV without garbling CJK text.
   const csvContent = `\uFEFF${toCsv(rows)}`;
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
@@ -67,6 +68,7 @@ function downloadCsv(filename, rows) {
 async function saveCsv(filename, rows) {
   const csvContent = `\uFEFF${toCsv(rows)}`;
 
+  // Prefer the File System Access API when available, then fall back to browser download.
   if ('showSaveFilePicker' in window) {
     const handle = await window.showSaveFilePicker({
       suggestedName: filename,
@@ -140,27 +142,150 @@ const MetricCard = ({ label, value, isPrimary = false }) => (
   </div>
 );
 
+const ChartContainer = ({ className = '', children }) => {
+  const containerRef = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = containerRef.current;
+
+    if (!element) {
+      return undefined;
+    }
+
+    // Recharts can read invalid dimensions during layout transitions.
+    // Measure first and render charts only when the container has a real size.
+    const updateSizeState = () => {
+      const { width, height } = element.getBoundingClientRect();
+      setSize((current) => {
+        const nextWidth = Math.floor(width);
+        const nextHeight = Math.floor(height);
+
+        if (current.width === nextWidth && current.height === nextHeight) {
+          return current;
+        }
+
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+    };
+
+    updateSizeState();
+
+    const observer = new ResizeObserver(() => {
+      updateSizeState();
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} className={className}>
+      {size.width > 0 && size.height > 0 ? children(size) : null}
+    </div>
+  );
+};
+
 export default function EvaluatioClassify() {
+  const location = useLocation();
+  const { trainingJobId: contextTrainingJobId, bestModelId: contextBestModelId } = useTraining();
+  const routedTrainingJobId = location.state?.trainingJobId ?? '';
+  const routedModelId = location.state?.modelId ?? '';
+  const activeTrainingJobId = String(routedTrainingJobId || contextTrainingJobId || sessionStorage.getItem('training_job_id') || '');
+  const activeModelId = String(routedModelId || contextBestModelId || sessionStorage.getItem('best_model_id') || '');
   const [fileName, setFileName] = useState('Spectro_Model_Alpha');
   const [version, setVersion] = useState('v2.1.0');
   const [notes, setNotes] = useState('');
+  const [trainingCsvContent, setTrainingCsvContent] = useState('');
+  const [isTrainingCsvLoading, setIsTrainingCsvLoading] = useState(false);
+  const [trainingCsvError, setTrainingCsvError] = useState('');
+  const [modelExportError, setModelExportError] = useState('');
+  const [isModelExporting, setIsModelExporting] = useState(false);
+
+  useEffect(() => {
+    // Resolve the active training job from route state, shared context, or session fallback.
+    if (!activeTrainingJobId) {
+      setTrainingCsvContent('');
+      setTrainingCsvError('缺少 training_job_id，無法取得訓練匯出檔。');
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchTrainingCsv = async () => {
+      setIsTrainingCsvLoading(true);
+      setTrainingCsvError('');
+
+      try {
+        const response = await fetch(`/api/evaluation/export/training-csv?training_job_id=${encodeURIComponent(activeTrainingJobId)}`, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/csv'
+          }
+        });
+
+        const csvContent = await response.text();
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}${csvContent ? `: ${csvContent}` : ''}`);
+        }
+
+        setTrainingCsvContent(csvContent);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        setTrainingCsvError(error instanceof Error ? error.message : '取得訓練 CSV 失敗');
+      } finally {
+        if (!isCancelled) {
+          setIsTrainingCsvLoading(false);
+        }
+      }
+    };
+
+    fetchTrainingCsv();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeTrainingJobId]);
 
   const handleTrainingExport = async () => {
-    const rows = [
-      ['sample', 'value'],
-      ...trainingData.map(({ name, value }) => [name, value])
-    ];
+    if (!trainingCsvContent) {
+      return;
+    }
+
+    const filename = `training-results-${activeTrainingJobId || 'latest'}.csv`;
 
     try {
-      await saveCsv('training-results.csv', rows);
+      await saveFile(filename, `\uFEFF${trainingCsvContent}`, 'text/csv;charset=utf-8;', [
+        {
+          description: 'CSV Files',
+          accept: {
+            'text/csv': ['.csv']
+          }
+        }
+      ]);
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        downloadCsv('training-results.csv', rows);
+        downloadFile(filename, `\uFEFF${trainingCsvContent}`, 'text/csv;charset=utf-8;');
       }
     }
   };
 
   const handleTestingExport = async () => {
+    // Testing chart data is still local mock data, so CSV export is assembled on the client.
     const rows = [
       ['predicted', 'actual'],
       ...testingData.map(({ x, y }) => [x, y])
@@ -176,28 +301,75 @@ export default function EvaluatioClassify() {
   };
 
   const handleModelExport = async () => {
-    const exportPayload = {
-      fileName,
-      version,
-      notes,
-      metrics: {
-        training: {
-          r2: 0.985,
-          rmse: 0.042,
-          rpd: 5.24
-        },
-        testing: {
-          r2: 0.942,
-          rmse: 0.058,
-          rpd: 4.18
-        }
-      },
-      trainingData,
-      testingData,
-      exportedAt: new Date().toISOString()
-    };
+    if (!activeModelId) {
+      console.log('[EvaluatioClassify] best_model_id missing', {
+        routedModelId,
+        contextBestModelId,
+        sessionModelId: sessionStorage.getItem('best_model_id')
+      });
+      setModelExportError('缺少 best_model_id，無法匯出模型詳情。');
+      return;
+    }
 
-    const content = JSON.stringify(exportPayload, null, 2);
+    setIsModelExporting(true);
+    setModelExportError('');
+
+    let content = '';
+
+    try {
+      console.log('[EvaluatioClassify] fetch model detail', {
+        trainingJobId: activeTrainingJobId,
+        modelId: activeModelId
+      });
+      const response = await fetch(`/api/evaluation/model/${encodeURIComponent(activeModelId)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json'
+        }
+      });
+
+      const responseContentType = response.headers.get('content-type') || '';
+      const body = responseContentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => '');
+
+      if (!response.ok) {
+        const detail = typeof body === 'string'
+          ? body
+          : body?.detail || body?.message || JSON.stringify(body);
+
+        console.log('[EvaluatioClassify] model detail request failed', {
+          modelId: activeModelId,
+          status: response.status,
+          detail
+        });
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      }
+
+      console.log('[EvaluatioClassify] model detail loaded', {
+        modelId: activeModelId,
+        body
+      });
+
+      const exportPayload = {
+        fileName,
+        version,
+        notes,
+        trainingJobId: activeTrainingJobId,
+        modelId: activeModelId,
+        exportedAt: new Date().toISOString(),
+        evaluationModelDetail: body
+      };
+
+      content = JSON.stringify(exportPayload, null, 2);
+      sessionStorage.setItem('evaluation_model_export_detail', JSON.stringify(body));
+    } catch (error) {
+      console.log('[EvaluatioClassify] handleModelExport error', error);
+      setModelExportError(error instanceof Error ? error.message : '取得模型詳情失敗');
+      setIsModelExporting(false);
+      return;
+    }
+
     const safeName = (fileName || 'model-export').trim().replace(/[\\/:*?"<>|]/g, '_');
     const filename = `${safeName || 'model-export'}-${version || 'v1.0.0'}.json`;
 
@@ -214,6 +386,8 @@ export default function EvaluatioClassify() {
       if (error?.name !== 'AbortError') {
         downloadFile(filename, content, 'application/json;charset=utf-8;');
       }
+    } finally {
+      setIsModelExporting(false);
     }
   };
 
@@ -259,16 +433,30 @@ export default function EvaluatioClassify() {
                   <button
                     type="button"
                     onClick={handleTrainingExport}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-bold transition-colors border border-slate-200"
+                    disabled={!trainingCsvContent || isTrainingCsvLoading}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors border ${
+                      !trainingCsvContent || isTrainingCsvLoading
+                        ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
                   >
                     <Download className="size-3.5" />
-                    CSV 匯出
+                    {isTrainingCsvLoading ? '載入中...' : 'CSV 匯出'}
                   </button>
                 </div>
+                {trainingCsvError ? (
+                  <p className="text-xs font-medium text-red-600">{trainingCsvError}</p>
+                ) : null}
+                {activeTrainingJobId ? (
+                  <p className="text-[11px] font-bold text-slate-400">training_job_id: {activeTrainingJobId}</p>
+                ) : null}
+                {activeModelId ? (
+                  <p className="text-[11px] font-bold text-slate-400">best_model_id: {activeModelId}</p>
+                ) : null}
 
-                <div className="h-48 w-full min-w-0 min-h-[12rem]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trainingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <ChartContainer className="h-48 w-full min-w-0 min-h-[12rem]">
+                  {({ width, height }) => (
+                    <BarChart width={width} height={height} data={trainingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="name" hide />
                       <YAxis hide />
@@ -282,8 +470,8 @@ export default function EvaluatioClassify() {
                       />
                       <Bar dataKey="value" fill="#659475" radius={[4, 4, 0, 0]} barSize={32} />
                     </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                  )}
+                </ChartContainer>
 
                 <div className="grid grid-cols-3 gap-3">
                   <MetricCard label="R²" value="0.985" isPrimary />
@@ -313,9 +501,9 @@ export default function EvaluatioClassify() {
                   </button>
                 </div>
 
-                <div className="h-48 w-full min-w-0 min-h-[12rem] bg-slate-50/30 border border-slate-100 rounded overflow-hidden">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: -20 }}>
+                <ChartContainer className="h-48 w-full min-w-0 min-h-[12rem] bg-slate-50/30 border border-slate-100 rounded overflow-hidden">
+                  {({ width, height }) => (
+                    <ScatterChart width={width} height={height} margin={{ top: 20, right: 20, bottom: 20, left: -20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis type="number" dataKey="x" hide />
                       <YAxis type="number" dataKey="y" hide />
@@ -332,8 +520,8 @@ export default function EvaluatioClassify() {
                         strokeOpacity={0.4}
                       />
                     </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
+                  )}
+                </ChartContainer>
 
                 <div className="grid grid-cols-3 gap-3">
                   <MetricCard label="R²" value="0.942" isPrimary />
@@ -353,6 +541,14 @@ export default function EvaluatioClassify() {
                   <p className="text-[11px] font-bold text-slate-400 mt-1 uppercase tracking-tight">
                     配置並匯出最終預測模型
                   </p>
+                  {activeModelId ? (
+                    <p className="text-[11px] font-bold text-slate-400 mt-2">model_id: {activeModelId}</p>
+                  ) : (
+                    <p className="text-xs font-medium text-red-600 mt-2">缺少 best_model_id，暫時無法匯出模型詳情。</p>
+                  )}
+                  {modelExportError ? (
+                    <p className="text-xs font-medium text-red-600 mt-2">{modelExportError}</p>
+                  ) : null}
                 </div>
 
                 <form
@@ -403,10 +599,15 @@ export default function EvaluatioClassify() {
 
                   <button
                     type="submit"
-                    className="w-full py-3 bg-primary hover:bg-primary-hover text-white font-bold rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all mt-4 active:scale-[0.98]"
+                    disabled={isModelExporting || !activeModelId}
+                    className={`w-full py-3 text-white font-bold rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all mt-4 active:scale-[0.98] ${
+                      isModelExporting || !activeModelId
+                        ? 'bg-slate-300 cursor-not-allowed'
+                        : 'bg-primary hover:bg-primary-hover'
+                    }`}
                   >
                     <ExternalLink className="size-5" />
-                    匯出 (Export)
+                    {isModelExporting ? '匯出中...' : '匯出 (Export)'}
                   </button>
                 </form>
               </motion.div>

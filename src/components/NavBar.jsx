@@ -1,14 +1,17 @@
 import React from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { FileUp, SlidersHorizontal, Cpu, FileText, User } from 'lucide-react';
+import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, User } from 'lucide-react';
 import logoAeyeot from '@/src/image/onlyLogoW_big 3.png';
+import { useTraining } from '../context/TrainingContext.jsx';
 
 export default function NavBar() {
   const location = useLocation();
+  const { hasActiveTraining } = useTraining();
   const pathname = location.pathname.toLowerCase();
   const isHomeActive = pathname === '/';
   const isPreprocessingActive = pathname.startsWith('/preprocessing');
   const isModelSetActive = pathname.startsWith('/modelset');
+  const isTrainingStatusActive = pathname.startsWith('/trainingstatus');
   const isEvaluatioClassify = pathname.startsWith('/evaluatioclassify');
 
   return (
@@ -47,6 +50,13 @@ export default function NavBar() {
               <Cpu size={20} />
               <span className="text-sm font-semibold">模型建構</span>
           </NavLink>
+          <NavLink
+              to="/trainingStatus"
+              className={navItemClass(isTrainingStatusActive)}
+          >
+              <LoaderCircle size={20} className={hasActiveTraining ? 'animate-spin' : ''} />
+              <span className="text-sm font-semibold">模型訓練中</span>
+          </NavLink>
 
           <NavLink
               to="/evaluatioClassify"
@@ -55,6 +65,8 @@ export default function NavBar() {
               <FileText size={20} />
               <span className="text-sm font-semibold">評估匯出</span>
           </NavLink>
+
+
         </nav>
       </div>
 

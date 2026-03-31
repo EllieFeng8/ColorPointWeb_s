@@ -107,6 +107,7 @@ export default function Preprocessing() {
   const [selectedFileId, setSelectedFileId] = useState('');
   const [componentOptions, setComponentOptions] = useState([]);
   const [selectedComponent, setSelectedComponent] = useState('');
+  const [chartVisibleSeries, setChartVisibleSeries] = useState('raw');
   const [preprocessingId, setPreprocessingId] = useState('');
   const [spectralDatasets, setSpectralDatasets] = useState({
     raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
@@ -159,6 +160,7 @@ export default function Preprocessing() {
       if (!selectedFileId) {
         setComponentOptions([]);
         setSelectedComponent('');
+        setChartVisibleSeries('raw');
         setPreprocessingId('');
         setSpectralDatasets({
           raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
@@ -198,6 +200,7 @@ export default function Preprocessing() {
           raw: rawDataset,
           processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
         });
+        setChartVisibleSeries('raw');
         setComponentOptions(nextComponents);
         setSelectedComponent((current) =>
           nextComponents.includes(current) ? current : (nextComponents[0] || '')
@@ -206,6 +209,7 @@ export default function Preprocessing() {
         console.log('[preprocessing] spectral datasets error', error);
         setComponentOptions([]);
         setSelectedComponent('');
+        setChartVisibleSeries('raw');
         setPreprocessingId('');
         setSpectralDatasets({
           raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
@@ -471,6 +475,7 @@ export default function Preprocessing() {
           ...current,
           processed: processedDataset
         }));
+        setChartVisibleSeries('processed');
         setComponentOptions(nextComponents);
         setSelectedComponent((current) =>
           nextComponents.includes(current) ? current : (nextComponents[0] || '')
@@ -851,6 +856,8 @@ export default function Preprocessing() {
                     samples: processedSamples
                   }}
                   selectedComponent={selectedComponent}
+                  visibleSeries={chartVisibleSeries}
+                  onVisibleSeriesChange={setChartVisibleSeries}
                 />
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {spectralSummaries.map((summary) => (

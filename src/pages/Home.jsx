@@ -106,6 +106,7 @@ function mapFilesToRows(fileList) {
     wavenumberMin: '--',
     wavenumberMax: '--',
     status: 'uploading',
+    isDeleting: false,
     error: '',
     response: null,
     uploadRecordId: null,
@@ -272,8 +273,64 @@ export default function Home() {
     uploadFile(nextFile);
   };
 
-  const removeFile = (id) => {
-    setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+  const removeFile = async (id) => {
+    const targetFile = files.find((file) => file.id === id);
+    if (!targetFile) {
+      return;
+    }
+
+    if (!targetFile.fileId) {
+      setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+      return;
+    }
+
+    setFiles((currentFiles) =>
+      currentFiles.map((file) =>
+        file.id === id
+          ? {
+              ...file,
+              isDeleting: true,
+              error: ''
+            }
+          : file
+      )
+    );
+
+    try {
+      const response = await fetch(`/api/upload/${targetFile.fileId}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json'
+        }
+      });
+
+      const responseContentType = response.headers.get('content-type') || '';
+      const responseBody = responseContentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => '');
+
+      if (!response.ok) {
+        const detail = typeof responseBody === 'string'
+          ? responseBody
+          : responseBody?.detail || responseBody?.message || JSON.stringify(responseBody);
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+      }
+
+      setFiles((currentFiles) => currentFiles.filter((file) => file.id !== id));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '刪除檔案失敗';
+      setFiles((currentFiles) =>
+        currentFiles.map((file) =>
+          file.id === id
+            ? {
+                ...file,
+                isDeleting: false,
+                error: errorMessage
+              }
+            : file
+        )
+      );
+    }
   };
 
   const resetForm = () => {
@@ -463,8 +520,15 @@ export default function Home() {
                           <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.wavenumberMax}</td>
                           <td className="px-8 py-5 text-right">
                             <button
+                              type="button"
                               onClick={() => removeFile(file.id)}
-                              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                              disabled={file.isDeleting}
+                              title={file.isDeleting ? '刪除中...' : '刪除檔案'}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                                file.isDeleting
+                                  ? 'cursor-not-allowed text-slate-200'
+                                  : 'text-slate-300 hover:text-red-500 hover:bg-red-50'
+                              }`}
                             >
                               <Trash2 size={18} />
                             </button>

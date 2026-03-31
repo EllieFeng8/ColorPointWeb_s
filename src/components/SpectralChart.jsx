@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef,useState } from 'react';
 import * as echarts from 'echarts';
 import { ChevronRight, Expand, Shrink } from 'lucide-react';
 
@@ -81,11 +81,12 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
 export default function SpectralChart({
   rawSeries = { wavelengths: [], samples: [] },
   processedSeries = { wavelengths: [], samples: [] },
-  selectedComponent = ''
+  selectedComponent = '',
+  visibleSeries = 'raw',
+  onVisibleSeriesChange = () => {}
 }) {
   const chartRef = useRef(null);
   const expandedChartRef = useRef(null);
-  const [visibleSeries, setVisibleSeries] = useState('raw');
   const [isExpanded, setIsExpanded] = useState(false);
   const wavelengths = useMemo(() => {
     if (visibleSeries === 'raw') {
@@ -314,7 +315,7 @@ export default function SpectralChart({
             <div className="relative border-l border-slate-100 pl-4">
               <select
                 value={visibleSeries}
-                onChange={(event) => setVisibleSeries(event.target.value)}
+                onChange={(event) => onVisibleSeriesChange(event.target.value)}
                 className="min-w-40 appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-[11px] font-bold uppercase tracking-wider text-slate-500 outline-none transition focus:border-primary/30 focus:ring-2 focus:ring-primary/20"
               >
                 {/*<option value="both">原始光譜 + 處理後光譜</option>*/}
@@ -368,7 +369,7 @@ export default function SpectralChart({
               <div className="relative w-fit">
                 <select
                   value={visibleSeries}
-                  onChange={(event) => setVisibleSeries(event.target.value)}
+                  onChange={(event) => onVisibleSeriesChange(event.target.value)}
                   className="min-w-40 appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-[11px] font-bold uppercase tracking-wider text-slate-500 outline-none transition focus:border-primary/30 focus:ring-2 focus:ring-primary/20"
                 >
                   {/*<option value="both">原始光譜 + 處理後光譜</option>*/}
