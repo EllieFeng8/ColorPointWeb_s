@@ -238,7 +238,7 @@ export function TrainingProvider({ children }) {
               return;
             }
 
-            const bestModelId = extractBestModelId(trainingStatus) || extractBestModelId(trainingDetail);
+            const bestModelId = extractBestModelId(trainingDetail);
             console.log('[TrainingContext] training detail loaded', {
               trainingJobId: trainingState.trainingJobId,
               bestModelId,
@@ -259,7 +259,7 @@ export function TrainingProvider({ children }) {
               console.log('[TrainingContext] persist best_model_id', String(bestModelId));
               window.sessionStorage.setItem('best_model_id', String(bestModelId));
             } else {
-              console.log('[TrainingContext] best_model_id missing in training detail');
+              console.log('[TrainingContext] best_model_id missing in training detail response');
               window.sessionStorage.removeItem('best_model_id');
             }
           }

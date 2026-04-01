@@ -58,6 +58,40 @@ function downloadCsv(filename, rows) {
   downloadFile(filename, `\uFEFF${toCsv(rows)}`, 'text/csv;charset=utf-8;');
 }
 
+function parseResponseBody(rawText, contentType) {
+  if (!rawText) {
+    return null;
+  }
+
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(rawText);
+    } catch {
+      return rawText;
+    }
+  }
+
+  return rawText;
+}
+
+function extractErrorDetail(body) {
+  if (!body) {
+    return '';
+  }
+
+  if (typeof body === 'string') {
+    return body.trim();
+  }
+
+  return (
+    body.detail ||
+    body.message ||
+    body.error ||
+    body.errors?.join?.(', ') ||
+    JSON.stringify(body)
+  );
+}
+
 async function saveFile(filename, content, mimeType, types) {
   if ('showSaveFilePicker' in window) {
     const handle = await window.showSaveFilePicker({
@@ -177,6 +211,14 @@ function formatKeyLabel(key) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function normalizeTaskCategory(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isRegressionTask(value) {
+  return normalizeTaskCategory(value) === 'regression';
+}
+
 function buildChartCsvRows(points) {
   return [
     ['actual', 'predicted'],
@@ -269,8 +311,8 @@ const ScatterPanel = ({
   subtitle,
   data,
   metrics,
+  showRegressionMetrics = false,
   loading = false,
-  error = '',
   exportLabel = 'CSV 匯出',
   onExport,
   exportDisabled = false,
@@ -304,8 +346,6 @@ const ScatterPanel = ({
             {loading ? '載入中...' : exportLabel}
           </button>
         </div>
-
-        {error ? <p className="text-xs font-medium text-red-600">{error}</p> : null}
 
         <ChartContainer className="h-56 min-h-[14rem] w-full overflow-hidden rounded border border-slate-100 bg-slate-50/30">
           {({ width, height }) => (
@@ -342,11 +382,13 @@ const ScatterPanel = ({
           )}
         </ChartContainer>
 
-        <div className="grid grid-cols-3 gap-3">
-          <MetricCard label="R²" value={formatMetricValue(metrics.rSquared)} isPrimary />
-          <MetricCard label="RMSE" value={formatMetricValue(metrics.rmse)} />
-          <MetricCard label="RPD" value={formatMetricValue(metrics.rpd)} />
-        </div>
+        {showRegressionMetrics ? (
+          <div className="grid grid-cols-3 gap-3">
+            <MetricCard label="R²" value={formatMetricValue(metrics.rSquared)} isPrimary />
+            <MetricCard label="RMSE" value={formatMetricValue(metrics.rmse)} />
+            <MetricCard label="RPD" value={formatMetricValue(metrics.rpd)} />
+          </div>
+        ) : null}
       </div>
     </motion.div>
   );
@@ -358,15 +400,12 @@ export default function EvaluatioClassify() {
   const routedTrainingJobId = location.state?.trainingJobId ?? '';
   const routedModelId = location.state?.modelId ?? '';
   const activeTrainingJobId = String(
-    routedTrainingJobId || contextTrainingJobId || sessionStorage.getItem('training_job_id') || ''
+    routedTrainingJobId || contextTrainingJobId || ''
   );
-  const activeModelId = String(
-    routedModelId || contextBestModelId || sessionStorage.getItem('best_model_id') || ''
-  );
+  const activeModelId = String(routedModelId || contextBestModelId || '');
 
   const [fileName, setFileName] = useState('Spectro_Model_Alpha');
   const [version, setVersion] = useState('v2.1.0');
-  const [notes, setNotes] = useState('');
   const [trainingCsvContent, setTrainingCsvContent] = useState('');
   const [isTrainingCsvLoading, setIsTrainingCsvLoading] = useState(false);
   const [trainingCsvError, setTrainingCsvError] = useState('');
@@ -441,27 +480,27 @@ export default function EvaluatioClassify() {
     async function fetchModelDetail() {
       setIsModelDetailLoading(true);
       setModelDetailError('');
+      const requestUrl = `/api/evaluation/model/${encodeURIComponent(activeModelId)}`;
 
       try {
-        const response = await fetch(`/api/evaluation/model/${encodeURIComponent(activeModelId)}`, {
+        const response = await fetch(requestUrl, {
           method: 'GET',
           headers: { Accept: 'application/json' }
         });
 
         const contentType = response.headers.get('content-type') || '';
-        const body = contentType.includes('application/json')
-          ? await response.json().catch(() => null)
-          : await response.text().catch(() => '');
+        const rawText = await response.text().catch(() => '');
+        const body = parseResponseBody(rawText, contentType);
 
         if (cancelled) {
           return;
         }
 
         if (!response.ok) {
-          const detail = typeof body === 'string'
-            ? body
-            : body?.detail || body?.message || JSON.stringify(body);
-          throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+          const detail = extractErrorDetail(body);
+          throw new Error(
+            `模型詳細資訊載入失敗 (${response.status} ${response.statusText})${detail ? `: ${detail}` : ''}`
+          );
         }
 
         setModelDetail(body);
@@ -545,6 +584,10 @@ export default function EvaluatioClassify() {
   const trainingMetrics = useMemo(() => getMetricGroup(modelDetail?.evaluation?.training_metrics), [modelDetail]);
   const testingMetrics = useMemo(() => getMetricGroup(modelDetail?.evaluation?.testing_metrics), [modelDetail]);
   const modelSummary = useMemo(() => modelDetail?.model || null, [modelDetail]);
+  const showRegressionMetrics = useMemo(
+    () => isRegressionTask(modelDetail?.model?.task_category),
+    [modelDetail]
+  );
   const modelParamsUsed = useMemo(() => Object.entries(modelSummary?.params_used || {}), [modelSummary]);
   const hyperparameterTuning = useMemo(
     () => trainingJobDetail?.hyperparameter_tuning || trainingJobDetail?.job?.hyperparameter_tuning || null,
@@ -672,6 +715,7 @@ export default function EvaluatioClassify() {
                 subtitle="樣本總數"
                 data={trainingChartData}
                 metrics={trainingMetrics}
+                showRegressionMetrics={showRegressionMetrics}
                 loading={isTrainingCsvLoading}
                 onExport={handleTrainingExport}
                 exportDisabled={!trainingCsvContent || isTrainingCsvLoading}
@@ -682,6 +726,7 @@ export default function EvaluatioClassify() {
                 subtitle="獨立驗證集"
                 data={testingChartData}
                 metrics={testingMetrics}
+                showRegressionMetrics={showRegressionMetrics}
                 loading={isModelDetailLoading}
                 onExport={handleTestingExport}
                 exportDisabled={!testingChartData.length || isModelDetailLoading}
@@ -738,18 +783,6 @@ export default function EvaluatioClassify() {
                         className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 pl-10 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                  </div>
-
-                  <div className="flex-1 space-y-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      備註 (Notes)
-                    </label>
-                    <textarea
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      placeholder="描述模型的主要更動與測試條件..."
-                      className="h-32 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
                   </div>
 
                   <button
@@ -852,8 +885,12 @@ export default function EvaluatioClassify() {
                   <div className="grid grid-cols-2 gap-3">
                     <MetricCard label="Accuracy" value={formatMetricValue(modelSummary?.accuracy)} isPrimary />
                     <MetricCard label="F1 Score" value={formatMetricValue(modelSummary?.f1_score)} />
-                    <MetricCard label="R²" value={formatMetricValue(modelSummary?.r_squared)} />
-                    <MetricCard label="RMSE" value={formatMetricValue(modelSummary?.rmse)} />
+                    {showRegressionMetrics ? (
+                      <>
+                        <MetricCard label="R²" value={formatMetricValue(modelSummary?.r_squared)} />
+                        <MetricCard label="RMSE" value={formatMetricValue(modelSummary?.rmse)} />
+                      </>
+                    ) : null}
                   </div>
                 </div>
               </motion.div>

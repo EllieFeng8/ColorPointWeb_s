@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
@@ -36,16 +36,114 @@ function getParamValue(rawValue, useGridSearch) {
     return useGridSearch ? values : (values[0] ?? Number(rawValue));
 }
 
-function getArrayOrFallback(values, fallbackValue) {
-    return values.length > 0 ? values : [fallbackValue];
+function getKernelParam(kernel, useGridSearch) {
+    return useGridSearch ? [kernel] : kernel;
+}
+
+function buildRegressionModelConfig(modelKey, options) {
+    const {
+        isGridSearch,
+        plsComponents,
+        svrKernel,
+        svrC,
+        svrTol,
+        rfEstimators,
+        xgboostEstimators,
+        xgboostMaxDepth
+    } = options;
+
+    switch (modelKey) {
+        case 'PLS':
+            return {
+                enabled: true,
+                params: {
+                    n_components: getParamValue(plsComponents, isGridSearch)
+                }
+            };
+        case 'SVR':
+            return {
+                enabled: true,
+                params: {
+                    kernel: getKernelParam(svrKernel, isGridSearch),
+                    C: getParamValue(svrC, isGridSearch),
+                    tol: getParamValue(svrTol, isGridSearch)
+                }
+            };
+        case 'RF':
+            return {
+                enabled: true,
+                params: {
+                    n_estimators: getParamValue(rfEstimators, isGridSearch)
+                }
+            };
+        case 'XGBoost':
+            return {
+                enabled: true,
+                params: {
+                    n_estimators: getParamValue(xgboostEstimators, isGridSearch),
+                    max_depth: getParamValue(xgboostMaxDepth, isGridSearch)
+                }
+            };
+        case 'CNN':
+            return {
+                enabled: true,
+                params: {}
+            };
+        default:
+            return null;
+    }
+}
+
+function buildClassificationModelConfig(modelKey, options) {
+    const {
+        isGridSearch,
+        nClasses,
+        svmKernel,
+        svmC,
+        svmTol,
+        ldaEstimators,
+        kmeansNeighbors
+    } = options;
+    const classificationParams = nClasses ? { n_classes: Number(nClasses) } : {};
+
+    switch (modelKey) {
+        case 'SVM':
+            return {
+                enabled: true,
+                params: {
+                    ...classificationParams,
+                    kernel: getKernelParam(svmKernel, isGridSearch),
+                    C: getParamValue(svmC, isGridSearch),
+                    tol: getParamValue(svmTol, isGridSearch)
+                }
+            };
+        case 'LDA':
+            return {
+                enabled: true,
+                params: {
+                    ...classificationParams,
+                    ...(ldaEstimators ? { n_estimators: getParamValue(ldaEstimators, isGridSearch) } : {})
+                }
+            };
+        case 'K-means':
+            return {
+                enabled: true,
+                params: {
+                    ...classificationParams,
+                    ...(kmeansNeighbors ? { n_neighbors: getParamValue(kmeansNeighbors, isGridSearch) } : {})
+                }
+            };
+        default:
+            return null;
+    }
 }
 
 export default function ModelSet() {
     const location = useLocation();
-    const routedPreprocessingId = location.state?.preprocessingId ?? '';
-    const routedFileId = location.state?.fileId ?? '';
-    const routedComponent = location.state?.component ?? '';
-    const routedWavelengthsLength = Number(location.state?.wavelengthsLength ?? 0);
+    const preprocessingId = location.state?.preprocessingId ?? '';
+    const selectedFileId = location.state?.fileId ?? '';
+    const selectedComponent = location.state?.component ?? '';
+    const wavelengthsLength = Number(location.state?.wavelengthsLength ?? 0);
     const [activeTab, setActiveTab] = useState('regression');
     const [selectedRegressionModel, setSelectedRegressionModel] = useState('pls');
     const [selectedClassificationModel, setSelectedClassificationModel] = useState('svm');
@@ -54,10 +152,6 @@ export default function ModelSet() {
     const [enableGridSearch, setEnableGridSearch] = useState(false);
     const [showLoading, setShowLoading] = useState(false);
     const [submitError, setSubmitError] = useState('');
-    const [preprocessingId] = useState(routedPreprocessingId);
-    const [selectedFileId] = useState(routedFileId);
-    const [selectedComponent] = useState(routedComponent);
-    const [wavelengthsLength] = useState(routedWavelengthsLength);
     const [plsComponents, setPlsComponents] = useState('12');
     const [svrC, setSvrC] = useState('1.0');
     const [svrTol, setSvrTol] = useState('0.001');
@@ -72,10 +166,8 @@ export default function ModelSet() {
     const [kFoldValue, setKFoldValue] = useState('10');
     const {
         trainingJobId,
-        trainingSummary,
         progress,
         statusText,
-        modelInfo,
         completionState,
         error: trainingError,
         hasActiveTraining,
@@ -123,15 +215,6 @@ export default function ModelSet() {
         setSelectedClassificationModel(id);
     };
 
-    const toggleKernelOption = (currentValues, setter, nextValue, fallbackValue, singleSetter) => {
-        const nextValues = currentValues.includes(nextValue)
-            ? currentValues.filter((value) => value !== nextValue)
-            : [...currentValues, nextValue];
-        const safeValues = nextValues.length > 0 ? nextValues : [fallbackValue];
-        setter(safeValues);
-        singleSetter(safeValues[0]);
-    };
-
     const handleTrain = async () => {
         if (hasActiveTraining) {
             setSubmitError('目前已有模型訓練進行中，請至「模型訓練中」頁面查看狀態。');
@@ -153,73 +236,44 @@ export default function ModelSet() {
             return;
         }
 
-        const regressionModels = {
-            PLS: {
-                enabled: selectedRegressionModel === 'pls',
-                params: {
-                    n_components: getParamValue(plsComponents, isGridSearch)
-                }
-            },
-            SVR: {
-                enabled: selectedRegressionModel === 'svr',
-                params: {
-                    kernel: svrKernel,
-                    C: getParamValue(svrC, isGridSearch),
-                    tol: getParamValue(svrTol, isGridSearch)
-                }
-            },
-            RF: {
-                enabled: selectedRegressionModel === 'rf',
-                params: {
-                    n_estimators: getParamValue(rfEstimators, isGridSearch)
-                }
-            },
-            XGBoost: {
-                enabled: selectedRegressionModel === 'xgboost',
-                params: {
-                    n_estimators: getParamValue(xgboostEstimators, isGridSearch),
-                    max_depth: getParamValue(xgboostMaxDepth, isGridSearch)
-                }
-            },
-            CNN: {
-                enabled: selectedRegressionModel === 'cnn',
-                params: {}
-            }
-        };
-        const classificationParams = nClasses ? { n_classes: Number(nClasses) } : {};
-        const classificationModels = {
-            SVM: {
-                enabled: selectedClassificationModel === 'svm',
-                params: {
-                    ...classificationParams,
-                    kernel: svmKernel,
-                    C: getParamValue(svmC, isGridSearch),
-                    tol: getParamValue(svmTol, isGridSearch)
-                }
-            },
-            LDA: {
-                enabled: selectedClassificationModel === 'lda',
-                params: {
-                    ...classificationParams,
-                    ...(ldaEstimators ? { n_estimators: getParamValue(ldaEstimators, isGridSearch) } : {})
-                }
-            },
-            'K-means': {
-                enabled: selectedClassificationModel === 'kmeans',
-                params: {
-                    ...classificationParams,
-                    ...(kmeansNeighbors ? { n_neighbors: getParamValue(kmeansNeighbors, isGridSearch) } : {})
-                }
-            }
-        };
-
-        const allModels = activeTab === 'regression' ? regressionModels : classificationModels;
+        const selectedRegressionModelKey = {
+            pls: 'PLS',
+            svr: 'SVR',
+            rf: 'RF',
+            xgboost: 'XGBoost',
+            cnn: 'CNN'
+        }[selectedRegressionModel];
+        const selectedClassificationModelKey = {
+            svm: 'SVM',
+            lda: 'LDA',
+            kmeans: 'K-means'
+        }[selectedClassificationModel];
         const selectedModelKey = activeTab === 'regression'
-            ? Object.keys(regressionModels).find((key) => regressionModels[key].enabled)
-            : Object.keys(classificationModels).find((key) => classificationModels[key].enabled);
-        const models = isGridSearch
-            ? allModels
-            : (selectedModelKey ? { [selectedModelKey]: allModels[selectedModelKey] } : {});
+            ? selectedRegressionModelKey
+            : selectedClassificationModelKey;
+        const selectedModelConfig = activeTab === 'regression'
+            ? buildRegressionModelConfig(selectedModelKey, {
+                isGridSearch,
+                plsComponents,
+                svrKernel,
+                svrC,
+                svrTol,
+                rfEstimators,
+                xgboostEstimators,
+                xgboostMaxDepth
+            })
+            : buildClassificationModelConfig(selectedModelKey, {
+                isGridSearch,
+                nClasses,
+                svmKernel,
+                svmC,
+                svmTol,
+                ldaEstimators,
+                kmeansNeighbors
+            });
+        const models = selectedModelKey && selectedModelConfig
+            ? { [selectedModelKey]: selectedModelConfig }
+            : {};
 
         const payload = {
             file_id: selectedFileId,
@@ -228,11 +282,10 @@ export default function ModelSet() {
             models,
             hyperparameter_tuning: {
                 grid_search: isGridSearch,
-                k_fold: Number(kFoldValue)
-            }
+                k_fold: Number(kFoldValue),
+            },
         };
 
-        console.log('[model-set] train payload', payload);
         const nextTrainingSummary = {
             taskCategory: payload.task_category,
             models: Object.entries(payload.models)
@@ -257,12 +310,6 @@ export default function ModelSet() {
                 ? await response.json().catch(() => null)
                 : await response.text().catch(() => '');
 
-            console.log('[model-set] train response', {
-                status: response.status,
-                ok: response.ok,
-                body: responseBody
-            });
-
             if (!response.ok) {
                 const detail = typeof responseBody === 'string'
                     ? responseBody
@@ -277,7 +324,6 @@ export default function ModelSet() {
 
             setTrainingJobId(String(nextTrainingJobId));
         } catch (error) {
-            console.log('[model-set] train error', error);
             const message = error instanceof Error ? error.message : '模型訓練失敗';
             setSubmitError(message);
             setTrainingError(message);
@@ -294,10 +340,8 @@ export default function ModelSet() {
                         <Loading
                             open={showLoading}
                             trainingJobId={trainingJobId}
-                            trainingSummary={trainingSummary}
                             progress={progress}
                             statusText={trainingError || statusText}
-                            modelInfo={modelInfo}
                             completionState={completionState}
                             onClose={() => setShowLoading(false)}
                             secondaryLabel="返回模型建構"

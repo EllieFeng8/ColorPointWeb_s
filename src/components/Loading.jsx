@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, ArrowRight, Settings } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -22,6 +22,7 @@ function normalizeTrainingDetail(detail) {
     taskCategory: detail?.task_category ?? '--',
     models: formatModels(detail?.models),
     status: detail?.status ?? '--',
+    bestModelId: detail?.best_model_id ?? detail?.bestModelId ?? '',
     errorMessage: detail?.status === 'error' ? (detail?.error_message ?? '') : '',
   };
 }
@@ -34,6 +35,9 @@ function getResponseMessage(body, fallback) {
   return body?.detail || body?.message || fallback;
 }
 
+const secondaryActionClassName =
+  'inline-flex flex-1 items-center justify-center rounded-xl border border-gray-200 px-4 py-3 font-medium text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-95';
+
 export default function Loading({
   open,
   onClose,
@@ -42,12 +46,12 @@ export default function Loading({
   statusText = '正在建立訓練任務...',
   completionState = null,
   secondaryLabel,
-  secondaryTo
+  secondaryTo,
 }) {
-  const [trainingDetail, setTrainingDetail] = React.useState(null);
-  const [detailError, setDetailError] = React.useState('');
+  const [trainingDetail, setTrainingDetail] = useState(null);
+  const [detailError, setDetailError] = useState('');
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open || !trainingJobId) {
       setTrainingDetail(null);
       setDetailError('');
@@ -97,7 +101,7 @@ export default function Loading({
     };
   }, [open, trainingJobId]);
 
-  const detail = React.useMemo(() => normalizeTrainingDetail(trainingDetail), [trainingDetail]);
+  const detail = useMemo(() => normalizeTrainingDetail(trainingDetail), [trainingDetail]);
   const isEvaluationDisabled = detail.status === 'error';
 
   return (
@@ -150,6 +154,11 @@ export default function Loading({
               <p className="text-xs font-semibold text-gray-500">
                 status: <span className="text-gray-700">{detail.status}</span>
               </p>
+              {detail.bestModelId ? (
+                <p className="text-xs font-semibold text-gray-500">
+                  best_model_id: <span className="text-gray-700">{detail.bestModelId}</span>
+                </p>
+              ) : null}
               {detail.errorMessage ? (
                 <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3">
                   <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-600" />
@@ -179,7 +188,7 @@ export default function Loading({
                 ) : (
                   <Link
                     to="/evaluatioClassify"
-                    state={{ trainingJobId }}
+                    state={{ trainingJobId, modelId: detail.bestModelId }}
                     className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#82b091] px-4 py-3 font-semibold text-white transition-all hover:bg-[#659475]"
                   >
                     前往評估匯出
@@ -191,7 +200,7 @@ export default function Loading({
               {secondaryTo ? (
                 <Link
                   to={secondaryTo}
-                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-gray-200 px-4 py-3 font-medium text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-95"
+                  className={secondaryActionClassName}
                 >
                   {secondaryLabel ?? '返回模型建構'}
                 </Link>
@@ -199,7 +208,7 @@ export default function Loading({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 rounded-xl border border-gray-200 px-4 py-3 font-medium text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-95"
+                  className={secondaryActionClassName}
                 >
                   {secondaryLabel ?? '返回模型建構'}
                 </button>
