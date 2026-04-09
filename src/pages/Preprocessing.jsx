@@ -51,6 +51,10 @@ function extractPreprocessingId(payload) {
   );
 }
 
+function createEmptySpectralDataset() {
+  return { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] };
+}
+
 function extractPreprocessingDataset(payload) {
   const source = payload ?? {};
   const wavelengths = toNumberArray(source?.wavelengths);
@@ -110,8 +114,8 @@ export default function Preprocessing() {
   const [chartVisibleSeries, setChartVisibleSeries] = useState('raw');
   const [preprocessingId, setPreprocessingId] = useState('');
   const [spectralDatasets, setSpectralDatasets] = useState({
-    raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
-    processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+    raw: createEmptySpectralDataset(),
+    processed: createEmptySpectralDataset()
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -163,8 +167,8 @@ export default function Preprocessing() {
         setChartVisibleSeries('raw');
         setPreprocessingId('');
         setSpectralDatasets({
-          raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
-          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+          raw: createEmptySpectralDataset(),
+          processed: createEmptySpectralDataset()
         });
         return;
       }
@@ -198,7 +202,7 @@ export default function Preprocessing() {
 
         setSpectralDatasets({
           raw: rawDataset,
-          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+          processed: createEmptySpectralDataset()
         });
         setChartVisibleSeries('raw');
         setComponentOptions(nextComponents);
@@ -212,8 +216,8 @@ export default function Preprocessing() {
         setChartVisibleSeries('raw');
         setPreprocessingId('');
         setSpectralDatasets({
-          raw: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] },
-          processed: { wavelengths: [], totalSamples: 0, samples: [], componentOptions: [] }
+          raw: createEmptySpectralDataset(),
+          processed: createEmptySpectralDataset()
         });
       }
     };
@@ -238,8 +242,52 @@ export default function Preprocessing() {
     setRfTopN('20');
     setCarsIterations('20');
     setCarsKFold('3');
+    setPreprocessingId('');
+    setSpectralDatasets((current) => ({
+      ...current,
+      processed: createEmptySpectralDataset()
+    }));
+    setChartVisibleSeries('raw');
     setSubmitError('');
   };
+
+  useEffect(() => {
+    setPreprocessingId('');
+    setSpectralDatasets((current) => {
+      if (
+        current.processed.wavelengths.length === 0 &&
+        current.processed.samples.length === 0 &&
+        current.processed.componentOptions.length === 0
+      ) {
+        return current;
+      }
+
+      return {
+        ...current,
+        processed: createEmptySpectralDataset()
+      };
+    });
+    setChartVisibleSeries((current) => current === 'processed' ? 'raw' : current);
+  }, [
+    selectedFileId,
+    selectedComponent,
+    baseline,
+    snv,
+    sg,
+    derivative,
+    normalization,
+    sgWindowSize,
+    sgPolynomialOrder,
+    derivativeOrder,
+    normalizationType,
+    wavelengthMethod,
+    manualStart,
+    manualEnd,
+    vipThreshold,
+    rfTopN,
+    carsIterations,
+    carsKFold
+  ]);
 
   const handleApplySettings = async () => {
     if (!selectedFileId) {
@@ -530,6 +578,7 @@ export default function Preprocessing() {
       wavelengthCount: spectralDatasets.processed.wavelengths.length
     }
   ];
+  const canProceedToModelSet = Boolean(preprocessingId) && spectralDatasets.processed.wavelengths.length > 0;
 
   return (
       <div className="h-screen flex overflow-hidden font-display">
@@ -892,6 +941,7 @@ export default function Preprocessing() {
             <Footer
               primaryLabel="下一步：模型設定"
               primaryTo="/modelSet"
+              primaryDisabled={!canProceedToModelSet}
               primaryState={{
               preprocessingId,
               fileId: selectedFileId,

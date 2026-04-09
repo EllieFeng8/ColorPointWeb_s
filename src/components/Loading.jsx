@@ -102,7 +102,7 @@ export default function Loading({
   }, [open, trainingJobId]);
 
   const detail = useMemo(() => normalizeTrainingDetail(trainingDetail), [trainingDetail]);
-  const isEvaluationDisabled = detail.status === 'error';
+  const canGoToEvaluation = detail.status === 'completed';
 
   return (
     <AnimatePresence>
@@ -180,12 +180,7 @@ export default function Loading({
 
             <div className="flex flex-col gap-3 sm:flex-row">
               {completionState ? (
-                isEvaluationDisabled ? (
-                  <span className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-300 px-4 py-3 font-semibold text-white">
-                    前往評估匯出
-                    <ArrowRight size={18} />
-                  </span>
-                ) : (
+                canGoToEvaluation ? (
                   <Link
                     to="/evaluatioClassify"
                     state={{ trainingJobId, modelId: detail.bestModelId }}
@@ -194,6 +189,11 @@ export default function Loading({
                     前往評估匯出
                     <ArrowRight size={18} />
                   </Link>
+                ) : (
+                  <span className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-300 px-4 py-3 font-semibold text-white">
+                    前往評估匯出
+                    <ArrowRight size={18} />
+                  </span>
                 )
               ) : null}
 

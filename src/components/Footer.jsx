@@ -26,6 +26,12 @@ export default function Footer({
         ? 'cursor-not-allowed bg-slate-300'
         : 'bg-[#82b091] hover:bg-[#659475] shadow-xl shadow-[#82b091]/30 hover:-translate-y-0.5 active:translate-y-0'
     }`;
+  const renderPrimaryContent = () => (
+    <>
+      {primaryLabel}
+      <ArrowRight size={18} />
+    </>
+  );
 
   return (
     <footer className="fixed bottom-0 right-0 left-72 border-t border-slate-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -45,15 +51,17 @@ export default function Footer({
             {secondaryLabel}
           </button>
         )}
-        {primaryTo ? (
+        {primaryTo && primaryDisabled ? (
+          <span aria-disabled="true" className={primaryClassName}>
+            {renderPrimaryContent()}
+          </span>
+        ) : primaryTo ? (
           <Link to={primaryTo} state={primaryState} className={primaryClassName}>
-            {primaryLabel}
-            <ArrowRight size={18} />
+            {renderPrimaryContent()}
           </Link>
         ) : (
           <button type="button" onClick={onPrimaryClick} disabled={primaryDisabled} className={primaryClassName}>
-            {primaryLabel}
-            <ArrowRight size={18} />
+            {renderPrimaryContent()}
           </button>
         )}
       </div>

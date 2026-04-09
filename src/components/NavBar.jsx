@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, User } from 'lucide-react';
+import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle } from 'lucide-react';
 import logoAeyeot from '@/src/image/onlyLogoW_big 3.png';
 import { useTraining } from '../context/TrainingContext.jsx';
 
@@ -13,6 +13,7 @@ export default function NavBar() {
   const isModelSetActive = pathname.startsWith('/modelset');
   const isTrainingStatusActive = pathname.startsWith('/trainingstatus');
   const isEvaluatioClassify = pathname.startsWith('/evaluatioclassify');
+  const isPrediction = pathname.startsWith('/prediction');
 
   return (
     <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
@@ -64,6 +65,13 @@ export default function NavBar() {
           >
               <FileText size={20} />
               <span className="text-sm font-semibold">評估匯出</span>
+          </NavLink>
+          <NavLink
+              to="/prediction"
+              className={navItemClass(isPrediction)}
+          >
+              <FileText size={20} />
+              <span className="text-sm font-semibold">模型預測</span>
           </NavLink>
 
 

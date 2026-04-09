@@ -121,9 +121,7 @@ export default function Home() {
   const fileInputRef = useRef(null);
   const selectedFile = files[0] ?? null;
 
-  const showImportSuccessAlert = () => {
-    swal('SweetAlert 已導入', '你現在可以在 React 元件內直接呼叫 swal(...)。', 'success');
-  };
+
 
   const fetchUploadSummary = async (rowId, uploadRecordId) => {
     const response = await fetch(uploadEndpoint, {
@@ -421,13 +419,6 @@ export default function Home() {
                 請上傳或拖放單一 .csv 光譜數據檔案
               </motion.p>
             </div>
-            <button
-              type="button"
-              onClick={showImportSuccessAlert}
-              className="rounded-xl border border-[#82b091]/20 bg-[#82b091]/10 px-5 py-3 text-sm font-bold text-[#659475] transition-colors hover:bg-[#82b091]/20"
-            >
-              測試 SweetAlert
-            </button>
           </header>
 
           <section>

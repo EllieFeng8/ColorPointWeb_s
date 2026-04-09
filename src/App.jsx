@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import ModelSet from "@/src/pages/ModelSet.jsx";
 import EvaluatioClassify from "./pages/EvaluatioClassify.jsx";
 import TrainingStatus from './pages/TrainingStatus.jsx';
+import Prediction from './pages/Prediction.jsx';
 import { TrainingProvider } from './context/TrainingContext.jsx';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/modelSet" element={<ModelSet />} />
           <Route path="/trainingStatus" element={<TrainingStatus />} />
           <Route path="/evaluatioClassify" element={<EvaluatioClassify />} />
+          <Route path="/prediction" element={<Prediction />} />
         </Routes>
       </BrowserRouter>
     </TrainingProvider>
