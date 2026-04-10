@@ -64,11 +64,13 @@ function createSelectedFile(file) {
 
 export default function Prediction() {
   const location = useLocation();
-  const fileInputRef = useRef(null);
+  const standardWhiteInputRef = useRef(null);
+  const dataInputRef = useRef(null);
   const routedFileName = location.state?.fileName ?? '';
 
   const [selectedModelId, setSelectedModelId] = useState(3);
-  const [selectedFile, setSelectedFile] = useState(
+  const [selectedStandardWhiteFile, setSelectedStandardWhiteFile] = useState(null);
+  const [selectedDataFile, setSelectedDataFile] = useState(
     routedFileName
       ? {
           name: routedFileName,
@@ -80,35 +82,48 @@ export default function Prediction() {
   const selectedModel = MODELS.find((model) => model.id === selectedModelId) ?? null;
 
   const resetForm = () => {
-    setSelectedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+    setSelectedStandardWhiteFile(null);
+    setSelectedDataFile(null);
+    if (standardWhiteInputRef.current) {
+      standardWhiteInputRef.current.value = '';
+    }
+    if (dataInputRef.current) {
+      dataInputRef.current.value = '';
     }
   };
 
-  const openFilePicker = () => {
-    fileInputRef.current?.click();
+  const openFilePicker = (type) => {
+    if (type === 'standardWhite') {
+      standardWhiteInputRef.current?.click();
+      return;
+    }
+
+    dataInputRef.current?.click();
   };
 
-  const handleFileChange = (event) => {
+  const handleFileChange = (type, event) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
 
-    setSelectedFile(createSelectedFile(file));
+    if (type === 'standardWhite') {
+      setSelectedStandardWhiteFile(createSelectedFile(file));
+    } else {
+      setSelectedDataFile(createSelectedFile(file));
+    }
     event.target.value = '';
   };
 
   const handleRunPrediction = async () => {
-    if (!selectedFile || !selectedModel) {
-      await swal('資料不足', '請先選擇檔案與模型。', 'warning');
+    if (!selectedStandardWhiteFile || !selectedDataFile || !selectedModel) {
+      await swal('資料不足', '請先選擇標準白、資料 CSV 與模型。', 'warning');
       return;
     }
 
     await swal(
       '尚未串接預測 API',
-      `已選擇 ${selectedModel.title}，檔案為 ${selectedFile.name}。`,
+      `已選擇 ${selectedModel.title}，標準白為 ${selectedStandardWhiteFile.name}，資料 CSV 為 ${selectedDataFile.name}。`,
       'info'
     );
   };
@@ -139,45 +154,75 @@ export default function Prediction() {
 
           <section className="space-y-4">
             <input
-              ref={fileInputRef}
+              ref={standardWhiteInputRef}
               type="file"
               accept=".csv,.spc,.txt,text/plain,text/csv"
               className="hidden"
-              onChange={handleFileChange}
+              onChange={(event) => handleFileChange('standardWhite', event)}
+            />
+            <input
+              ref={dataInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(event) => handleFileChange('data', event)}
             />
 
-            <motion.div
-              whileHover={{ scale: 1.005 }}
-              onClick={openFilePicker}
-              className="group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-6 py-20 text-center transition-all hover:border-[#82b091] hover:bg-[#82b091]/5"
-            >
-              <div className="relative z-10 flex flex-col items-center space-y-6">
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border border-slate-100 bg-white text-[#82b091] shadow-sm transition-transform group-hover:scale-110">
-                  <FileUp size={36} />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-xl font-bold text-[#111827]">點擊選擇預測檔案</h3>
-                  <p className="text-slate-400">支援 .csv、.spc、.txt 光譜資料格式</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openFilePicker();
-                  }}
-                  className="rounded-xl bg-[#82b091] px-10 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all active:scale-95 hover:bg-[#659475]"
-                >
-                  選擇檔案
-                </button>
-              </div>
-            </motion.div>
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {[
+                {
+                  type: 'standardWhite',
+                  title: '點擊選擇標準白檔案',
+                  description: '支援 .csv、.spc、.txt 標準白光譜格式',
+                  selectedFile: selectedStandardWhiteFile
+                },
+                {
+                  type: 'data',
+                  title: '點擊選擇資料 CSV',
+                  description: '支援 .csv 資料格式',
+                  selectedFile: selectedDataFile
+                }
+              ].map((uploadItem) => (
+                <div key={uploadItem.type} className="space-y-3">
+                  <motion.div
+                    whileHover={{ scale: 1.005 }}
+                    onClick={() => openFilePicker(uploadItem.type)}
+                    className="group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-6 py-16 text-center transition-all hover:border-[#82b091] hover:bg-[#82b091]/5"
+                  >
+                    <div className="relative z-10 flex flex-col items-center space-y-6">
+                      <div className="flex h-20 w-20 items-center justify-center rounded-full border border-slate-100 bg-white text-[#82b091] shadow-sm transition-transform group-hover:scale-110">
+                        <FileUp size={36} />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-xl font-bold text-[#111827]">{uploadItem.title}</h3>
+                        <p className="text-slate-400">{uploadItem.description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openFilePicker(uploadItem.type);
+                        }}
+                        className="rounded-xl bg-[#82b091] px-10 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all active:scale-95 hover:bg-[#659475]"
+                      >
+                        選擇檔案
+                      </button>
+                    </div>
+                  </motion.div>
 
-            {selectedFile ? (
-              <div className="rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
-                <p className="text-sm font-bold text-[#111827]">{selectedFile.name}</p>
-                <p className="mt-1 text-xs text-slate-500">檔案大小: {selectedFile.sizeLabel}</p>
-              </div>
-            ) : null}
+                  {uploadItem.selectedFile ? (
+                    <div className="rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
+                      <p className="text-sm font-bold text-[#111827]">
+                        {uploadItem.selectedFile.name}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        檔案大小: {uploadItem.selectedFile.sizeLabel}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </section>
 
           <section className="space-y-8">
@@ -270,7 +315,7 @@ export default function Prediction() {
       <Footer
         primaryLabel="執行預測"
         onPrimaryClick={handleRunPrediction}
-        primaryDisabled={!selectedFile || !selectedModel}
+        primaryDisabled={!selectedStandardWhiteFile || !selectedDataFile || !selectedModel}
         secondaryLabel="清除"
         onSecondaryClick={resetForm}
       />
