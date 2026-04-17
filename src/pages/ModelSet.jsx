@@ -144,7 +144,8 @@ export default function ModelSet() {
     const selectedFileId = location.state?.fileId ?? '';
     const selectedComponent = location.state?.component ?? '';
     const wavelengthsLength = Number(location.state?.wavelengthsLength ?? 0);
-    const [activeTab, setActiveTab] = useState('regression');
+    const routedTaskCategory = location.state?.taskCategory ?? 'regression';
+    const [activeTab, setActiveTab] = useState(routedTaskCategory);
     const [selectedRegressionModel, setSelectedRegressionModel] = useState('pls');
     const [selectedClassificationModel, setSelectedClassificationModel] = useState('svm');
     const [svrKernel, setSvrKernel] = useState('linear');

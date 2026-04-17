@@ -74,6 +74,44 @@ function extractPreprocessingDataset(payload) {
   };
 }
 
+function normalizeUploadList(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function getUploadRecordTimestamp(record) {
+  const rawTimestamp =
+    record?.uploaded_at ??
+    record?.created_at ??
+    record?.updated_at ??
+    record?.timestamp ??
+    null;
+
+  if (!rawTimestamp) {
+    return 0;
+  }
+
+  const parsed = new Date(rawTimestamp).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getLatestUploadRecord(records) {
+  return [...records].sort(
+    (left, right) => getUploadRecordTimestamp(right) - getUploadRecordTimestamp(left)
+  )[0] ?? null;
+}
+
 const Toggle = ({ checked, onChange }) => (
     <button
         onClick={() => onChange(!checked)}
@@ -92,6 +130,7 @@ const Toggle = ({ checked, onChange }) => (
 export default function Preprocessing() {
   const location = useLocation();
   const routedFileId = location.state?.fileId ?? '';
+  const routedTaskCategory = location.state?.taskCategory ?? 'regression';
   const [baseline, setBaseline] = useState(true);
   const [snv, setSnv] = useState(true);
   const [sg, setSg] = useState(false);
@@ -138,8 +177,8 @@ export default function Preprocessing() {
           throw new Error(`GET /api/upload/ failed with HTTP ${response.status}`);
         }
 
-        const uploads = await response.json();
-        const latestUpload = Array.isArray(uploads) ? uploads[0] : uploads?.results?.[0];
+        const uploads = await response.json().catch(() => null);
+        const latestUpload = getLatestUploadRecord(normalizeUploadList(uploads));
         const nextFileId = latestUpload?.id;
 
         console.log('[preprocessing] latest upload', {
@@ -946,12 +985,14 @@ export default function Preprocessing() {
               preprocessingId,
               fileId: selectedFileId,
               component: selectedComponent,
-              wavelengthsLength: spectralDatasets.processed.wavelengths.length
+              wavelengthsLength: spectralDatasets.processed.wavelengths.length,
+              taskCategory: routedTaskCategory
             }}
             secondaryLabel="上一步"
             secondaryTo="/"
             secondaryState={{
-              fileId: selectedFileId
+              fileId: selectedFileId,
+              taskCategory: routedTaskCategory
             }}
           />
         </div>

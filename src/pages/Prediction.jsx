@@ -1,43 +1,10 @@
-import React, { useRef, useState } from 'react';
-import { FileUp, Filter, FlaskConical, Search, Sprout, Waves } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronDown, FileUp, FlaskConical } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import swal from 'sweetalert';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
-
-const MODELS = [
-  {
-    id: 1,
-    title: 'Soil Organic Carbon Model v1.0',
-    description: 'Optimized for high-clay content soils in temperate climates. High sensitivity to organic matter signatures.',
-    r2: '0.985',
-    rmse: '0.02',
-    tag: 'Verified',
-    icon: Sprout,
-    colorClassName: 'bg-emerald-50 text-emerald-600'
-  },
-  {
-    id: 2,
-    title: 'Nitrogen Content Model v2.1',
-    description: 'Precision nitrogen detection utilizing broad-spectrum normalization techniques for foliage and soil.',
-    r2: '0.942',
-    rmse: '0.11',
-    tag: 'Public',
-    icon: FlaskConical,
-    colorClassName: 'bg-rose-50 text-rose-600'
-  },
-  {
-    id: 3,
-    title: 'Moisture Level Calibration v3.4',
-    description: 'Standard industrial moisture prediction for raw granular samples. Real-time temperature compensation enabled.',
-    r2: '0.991',
-    rmse: '0.005',
-    tag: 'Selected',
-    icon: Waves,
-    colorClassName: 'bg-blue-50 text-blue-600'
-  }
-];
 
 function formatFileSize(bytes) {
   if (!Number.isFinite(bytes) || bytes < 0) {
@@ -62,13 +29,47 @@ function createSelectedFile(file) {
   };
 }
 
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error ?? new Error('檔案讀取失敗'));
+
+    reader.readAsText(file);
+  });
+}
+
+function convertJsonToArray(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value);
+  }
+
+  return [value];
+}
+
+function parseCsvToArray(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(',').map((cell) => cell.trim()));
+}
+
 export default function Prediction() {
   const location = useLocation();
   const standardWhiteInputRef = useRef(null);
   const dataInputRef = useRef(null);
   const routedFileName = location.state?.fileName ?? '';
 
-  const [selectedModelId, setSelectedModelId] = useState(3);
+  const [selectedModelName, setSelectedModelName] = useState('');
+  const [modelNames, setModelNames] = useState([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(true);
+  const [modelsError, setModelsError] = useState('');
   const [selectedStandardWhiteFile, setSelectedStandardWhiteFile] = useState(null);
   const [selectedDataFile, setSelectedDataFile] = useState(
     routedFileName
@@ -78,12 +79,70 @@ export default function Prediction() {
         }
       : null
   );
+  const [standardWhiteArray, setStandardWhiteArray] = useState([]);
+  const [dataArray, setDataArray] = useState([]);
 
-  const selectedModel = MODELS.find((model) => model.id === selectedModelId) ?? null;
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadModelNames = async () => {
+      setIsLoadingModels(true);
+      setModelsError('');
+
+      try {
+        const response = await fetch('/api/modeling/models/names/all', {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        const names = Array.isArray(result?.model_names)
+          ? result.model_names.filter((name) => typeof name === 'string' && name.trim() !== '')
+          : [];
+
+        if (!isMounted) {
+          return;
+        }
+
+        setModelNames(names);
+        setSelectedModelName((currentName) => currentName || names[0] || '');
+
+        if (names.length === 0) {
+          setModelsError('目前沒有可選擇的模型。');
+        }
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        setModelNames([]);
+        setSelectedModelName('');
+        setModelsError('模型清單讀取失敗。');
+      } finally {
+        if (isMounted) {
+          setIsLoadingModels(false);
+        }
+      }
+    };
+
+    loadModelNames();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const resetForm = () => {
     setSelectedStandardWhiteFile(null);
     setSelectedDataFile(null);
+    setStandardWhiteArray([]);
+    setDataArray([]);
     if (standardWhiteInputRef.current) {
       standardWhiteInputRef.current.value = '';
     }
@@ -101,29 +160,57 @@ export default function Prediction() {
     dataInputRef.current?.click();
   };
 
-  const handleFileChange = (type, event) => {
+  const handleFileChange = async (type, event) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
 
-    if (type === 'standardWhite') {
-      setSelectedStandardWhiteFile(createSelectedFile(file));
-    } else {
-      setSelectedDataFile(createSelectedFile(file));
+    try {
+      const fileText = await readFileAsText(file);
+
+      if (type === 'standardWhite') {
+        const parsedJson = JSON.parse(fileText);
+        setSelectedStandardWhiteFile(createSelectedFile(file));
+        setStandardWhiteArray(convertJsonToArray(parsedJson));
+      } else {
+        setSelectedDataFile(createSelectedFile(file));
+        setDataArray(parseCsvToArray(fileText));
+      }
+    } catch (error) {
+      if (type === 'standardWhite') {
+        setSelectedStandardWhiteFile(null);
+        setStandardWhiteArray([]);
+      } else {
+        setSelectedDataFile(null);
+        setDataArray([]);
+      }
+
+      await swal(
+        '檔案格式錯誤',
+        type === 'standardWhite' ? '請上傳可解析的 JSON 參數檔。' : '請上傳可解析的 CSV 檔案。',
+        'error'
+      );
     }
+
     event.target.value = '';
   };
 
   const handleRunPrediction = async () => {
-    if (!selectedStandardWhiteFile || !selectedDataFile || !selectedModel) {
+    if (
+      !selectedStandardWhiteFile ||
+      !selectedDataFile ||
+      !selectedModelName ||
+      standardWhiteArray.length === 0 ||
+      dataArray.length === 0
+    ) {
       await swal('資料不足', '請先選擇標準白、資料 CSV 與模型。', 'warning');
       return;
     }
 
     await swal(
       '尚未串接預測 API',
-      `已選擇 ${selectedModel.title}，標準白為 ${selectedStandardWhiteFile.name}，資料 CSV 為 ${selectedDataFile.name}。`,
+      `已選擇 ${selectedModelName}，參數 array 筆數為 ${standardWhiteArray.length}，CSV array 筆數為 ${dataArray.length}。`,
       'info'
     );
   };
@@ -156,7 +243,7 @@ export default function Prediction() {
             <input
               ref={standardWhiteInputRef}
               type="file"
-              accept=".csv,.spc,.txt,text/plain,text/csv"
+              accept=".json,application/json"
               className="hidden"
               onChange={(event) => handleFileChange('standardWhite', event)}
             />
@@ -172,8 +259,8 @@ export default function Prediction() {
               {[
                 {
                   type: 'standardWhite',
-                  title: '點擊選擇標準白檔案',
-                  description: '支援 .csv、.spc、.txt 標準白光譜格式',
+                  title: '點擊選擇參數檔案',
+                  description: '支援 .json 格式',
                   selectedFile: selectedStandardWhiteFile
                 },
                 {
@@ -203,7 +290,7 @@ export default function Prediction() {
                           event.stopPropagation();
                           openFilePicker(uploadItem.type);
                         }}
-                        className="rounded-xl bg-[#82b091] px-10 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all active:scale-95 hover:bg-[#659475]"
+                        className="rounded-xl bg-[#82b091] px-10 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all hover:bg-[#659475] active:scale-95"
                       >
                         選擇檔案
                       </button>
@@ -218,6 +305,12 @@ export default function Prediction() {
                       <p className="mt-1 text-xs text-slate-500">
                         檔案大小: {uploadItem.selectedFile.sizeLabel}
                       </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        陣列筆數:{' '}
+                        {uploadItem.type === 'standardWhite'
+                          ? standardWhiteArray.length
+                          : dataArray.length}
+                      </p>
                     </div>
                   ) : null}
                 </div>
@@ -225,88 +318,45 @@ export default function Prediction() {
             </div>
           </section>
 
-          <section className="space-y-8">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-[#82b091]/10 p-2">
-                  <FlaskConical className="h-5 w-5 text-[#82b091]" />
-                </div>
-                <h3 className="text-2xl font-bold text-[#111827]">模型選擇</h3>
+          <section className="space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-[#82b091]/10 p-2">
+                <FlaskConical className="h-5 w-5 text-[#82b091]" />
               </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  className="rounded-xl bg-slate-100 p-2.5 text-slate-500 transition-colors hover:bg-slate-200"
-                >
-                  <Filter className="h-5 w-5" />
-                </button>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="搜尋模型..."
-                    className="w-64 rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm outline-none transition-all focus:border-[#82b091] focus:ring-1 focus:ring-[#82b091]"
-                  />
-                  <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </div>
+              <h3 className="text-2xl font-bold text-[#111827]">模型選擇</h3>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {MODELS.map((model) => {
-                const Icon = model.icon;
-                const isSelected = selectedModelId === model.id;
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
+              <label
+                htmlFor="prediction-model-select"
+                className="mb-2 block text-sm font-semibold text-slate-700"
+              >
+                選擇模型名稱
+              </label>
 
-                return (
-                  <motion.div
-                    key={model.id}
-                    whileHover={{ y: -4 }}
-                    className={`rounded-2xl border bg-white p-6 transition-all ${
-                      isSelected
-                        ? 'border-transparent ring-2 ring-[#82b091] shadow-xl'
-                        : 'border-slate-200 shadow-sm hover:border-[#82b091]/30'
-                    }`}
-                  >
-                    <div className="mb-6 flex items-start justify-between">
-                      <div className={`rounded-xl p-3 ${model.colorClassName}`}>
-                        <Icon className="h-6 w-6" />
-                      </div>
-                      {isSelected ? (
-                        <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-wider text-[#82b091]">
-                          <span className="h-2 w-2 rounded-full bg-[#82b091]" />
-                          Selected
-                        </div>
-                      ) : (
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          {model.tag}
-                        </span>
-                      )}
-                    </div>
+              <div className="relative">
+                <select
+                  id="prediction-model-select"
+                  value={selectedModelName}
+                  onChange={(event) => setSelectedModelName(event.target.value)}
+                  disabled={isLoadingModels || modelNames.length === 0}
+                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm font-medium text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  <option value="">
+                    {isLoadingModels ? '模型載入中...' : '請選擇模型'}
+                  </option>
+                  {modelNames.map((modelName) => (
+                    <option key={modelName} value={modelName}>
+                      {modelName}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+              </div>
 
-                    <h4 className="mb-2 font-bold leading-tight text-[#111827]">{model.title}</h4>
-                    <p className="mb-8 line-clamp-2 text-xs leading-relaxed text-slate-500">
-                      {model.description}
-                    </p>
-
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-5">
-                      <div className="text-[10px] font-bold uppercase tracking-tight text-slate-500">
-                        R²: {model.r2} | RMSE: {model.rmse}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedModelId(model.id)}
-                        className={`rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                          isSelected
-                            ? 'bg-[#82b091] text-white shadow-md'
-                            : 'bg-[#82b091]/10 text-[#659475] hover:bg-[#82b091]/20'
-                        }`}
-                      >
-                        {isSelected ? 'Selected' : 'Select'}
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
+              <p className="mt-3 text-sm text-slate-500">
+                {modelsError || `目前共載入 ${modelNames.length} 個模型名稱。`}
+              </p>
             </div>
           </section>
         </div>
@@ -315,7 +365,13 @@ export default function Prediction() {
       <Footer
         primaryLabel="執行預測"
         onPrimaryClick={handleRunPrediction}
-        primaryDisabled={!selectedStandardWhiteFile || !selectedDataFile || !selectedModel}
+        primaryDisabled={
+          !selectedStandardWhiteFile ||
+          !selectedDataFile ||
+          !selectedModelName ||
+          standardWhiteArray.length === 0 ||
+          dataArray.length === 0
+        }
         secondaryLabel="清除"
         onSecondaryClick={resetForm}
       />

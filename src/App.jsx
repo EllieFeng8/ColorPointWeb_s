@@ -5,6 +5,7 @@ import ModelSet from "@/src/pages/ModelSet.jsx";
 import EvaluatioClassify from "./pages/EvaluatioClassify.jsx";
 import TrainingStatus from './pages/TrainingStatus.jsx';
 import Prediction from './pages/Prediction.jsx';
+import MachineModelSetting from './pages/MachineModelSetting.jsx';
 import { TrainingProvider } from './context/TrainingContext.jsx';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
           <Route path="/trainingStatus" element={<TrainingStatus />} />
           <Route path="/evaluatioClassify" element={<EvaluatioClassify />} />
           <Route path="/prediction" element={<Prediction />} />
+          <Route path="/machineModelSetting" element={<MachineModelSetting />} />
         </Routes>
       </BrowserRouter>
     </TrainingProvider>

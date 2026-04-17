@@ -174,6 +174,50 @@ function normalizeScatterData(points) {
     .filter(Boolean);
 }
 
+function normalizeEvaluationResults(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  return payload ? [payload] : [];
+}
+
+function pickEvaluationResultRecord(records, activeModelId, activeTrainingJobId) {
+  if (!records.length) {
+    return null;
+  }
+
+  if (activeModelId) {
+    const matchedModelRecord = records.find((record) =>
+      String(record?.trained_model_id ?? record?._id ?? '') === String(activeModelId)
+    );
+
+    if (matchedModelRecord) {
+      return matchedModelRecord;
+    }
+  }
+
+  if (activeTrainingJobId) {
+    const matchedTrainingRecord = records.find((record) =>
+      String(record?.training_job_id ?? '') === String(activeTrainingJobId)
+    );
+
+    if (matchedTrainingRecord) {
+      return matchedTrainingRecord;
+    }
+  }
+
+  return records[0] ?? null;
+}
+
 const REGRESSION_METRICS = [
   { key: 'r_squared', label: 'R Squared' },
   { key: 'rmse', label: 'RMSE' },
@@ -583,44 +627,44 @@ const ScatterPanel = ({
           </button>
         </div>
 
-        <ChartContainer className="h-56 min-h-[14rem] w-full overflow-hidden rounded border border-slate-100 bg-slate-50/30">
-          {({ width, height }) => (
-            <ScatterChart width={width} height={height} margin={{ top: 20, right: 24, bottom: 28, left: 6 }}>
-              <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-              <XAxis
-                type="number"
-                dataKey="actual"
-                domain={domain}
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                tickFormatter={formatChartValue}
-                label={{ value: 'Actual', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
-              />
-              <YAxis
-                type="number"
-                dataKey="predicted"
-                domain={domain}
-                tick={{ fontSize: 11, fill: '#64748b' }}
-                tickFormatter={formatChartValue}
-                label={{ value: 'Predicted', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
-              />
-              <ZAxis type="number" range={[48, 48]} />
-              <ReferenceLine
-                segment={[
-                  { x: domain[0], y: domain[0] },
-                  { x: domain[1], y: domain[1] }
-                ]}
-                stroke="#94a3b8"
-                strokeDasharray="4 4"
-              />
-              <Tooltip content={<ScatterTooltip />} />
-              <Scatter data={data} fill="#659475" opacity={0.72} />
-            </ScatterChart>
-          )}
-        </ChartContainer>
-
         {showConfusionMatrix ? (
           <ConfusionMatrix labels={confusionMatrix.labels} rows={confusionMatrix.rows} />
-        ) : null}
+        ) : (
+          <ChartContainer className="h-56 min-h-[14rem] w-full overflow-hidden rounded border border-slate-100 bg-slate-50/30">
+            {({ width, height }) => (
+              <ScatterChart width={width} height={height} margin={{ top: 20, right: 24, bottom: 28, left: 6 }}>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  dataKey="actual"
+                  domain={domain}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tickFormatter={formatChartValue}
+                  label={{ value: 'Actual', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
+                />
+                <YAxis
+                  type="number"
+                  dataKey="predicted"
+                  domain={domain}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tickFormatter={formatChartValue}
+                  label={{ value: 'Predicted', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
+                />
+                <ZAxis type="number" range={[48, 48]} />
+                <ReferenceLine
+                  segment={[
+                    { x: domain[0], y: domain[0] },
+                    { x: domain[1], y: domain[1] }
+                  ]}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                />
+                <Tooltip content={<ScatterTooltip />} />
+                <Scatter data={data} fill="#659475" opacity={0.72} />
+              </ScatterChart>
+            )}
+          </ChartContainer>
+        )}
 
       </div>
     </motion.div>
@@ -642,6 +686,9 @@ export default function EvaluatioClassify() {
   const [trainingCsvContent, setTrainingCsvContent] = useState('');
   const [isTrainingCsvLoading, setIsTrainingCsvLoading] = useState(false);
   const [trainingCsvError, setTrainingCsvError] = useState('');
+  const [evaluationResult, setEvaluationResult] = useState(null);
+  const [isEvaluationResultLoading, setIsEvaluationResultLoading] = useState(false);
+  const [evaluationResultError, setEvaluationResultError] = useState('');
   const [trainingJobDetail, setTrainingJobDetail] = useState(null);
   const [trainingJobDetailError, setTrainingJobDetailError] = useState('');
   const [modelDetail, setModelDetail] = useState(null);
@@ -702,6 +749,61 @@ export default function EvaluatioClassify() {
   }, [activeTrainingJobId]);
 
   useEffect(() => {
+    if (!activeTrainingJobId) {
+      setEvaluationResult(null);
+      setEvaluationResultError('缺少 training_job_id，無法取得評估結果。');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchEvaluationResult() {
+      setIsEvaluationResultLoading(true);
+      setEvaluationResultError('');
+
+      try {
+        const response = await fetch(`/api/evaluation/results/${encodeURIComponent(activeTrainingJobId)}`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' }
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const body = contentType.includes('application/json')
+          ? await response.json().catch(() => null)
+          : await response.text().catch(() => '');
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          const detail = typeof body === 'string'
+            ? body
+            : body?.detail || body?.message || JSON.stringify(body);
+          throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
+        }
+
+        setEvaluationResult(body);
+      } catch (error) {
+        if (!cancelled) {
+          setEvaluationResult(null);
+          setEvaluationResultError(error instanceof Error ? error.message : '取得評估結果失敗');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsEvaluationResultLoading(false);
+        }
+      }
+    }
+
+    fetchEvaluationResult();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTrainingJobId]);
+
+  useEffect(() => {
     if (!activeModelId) {
       setModelDetail(null);
       setModelDetailError('缺少 modelId，無法取得模型詳細資訊。');
@@ -713,7 +815,7 @@ export default function EvaluatioClassify() {
     async function fetchModelDetail() {
       setIsModelDetailLoading(true);
       setModelDetailError('');
-      const requestUrl = `/api/modeling/models/${encodeURIComponent(activeModelId)}`;
+      const requestUrl = `/api/evaluation/model/${encodeURIComponent(activeModelId)}`;
 
       try {
         const response = await fetch(requestUrl, {
@@ -806,16 +908,24 @@ export default function EvaluatioClassify() {
     };
   }, [activeTrainingJobId]);
 
+  const selectedEvaluationResult = useMemo(
+    () => pickEvaluationResultRecord(
+      normalizeEvaluationResults(evaluationResult),
+      activeModelId,
+      activeTrainingJobId
+    ),
+    [evaluationResult, activeModelId, activeTrainingJobId]
+  );
   const trainingChartData = useMemo(
-    () => normalizeScatterData(modelDetail?.evaluation?.training_chart_data),
-    [modelDetail]
+    () => normalizeScatterData(selectedEvaluationResult?.training_chart_data),
+    [selectedEvaluationResult]
   );
   const testingChartData = useMemo(
-    () => normalizeScatterData(modelDetail?.evaluation?.testing_chart_data),
-    [modelDetail]
+    () => normalizeScatterData(selectedEvaluationResult?.testing_chart_data),
+    [selectedEvaluationResult]
   );
-  const trainingMetrics = useMemo(() => modelDetail?.evaluation?.training_metrics || {}, [modelDetail]);
-  const testingMetrics = useMemo(() => modelDetail?.evaluation?.testing_metrics || {}, [modelDetail]);
+  const trainingMetrics = useMemo(() => selectedEvaluationResult?.training_metrics || {}, [selectedEvaluationResult]);
+  const testingMetrics = useMemo(() => selectedEvaluationResult?.testing_metrics || {}, [selectedEvaluationResult]);
   const modelSummary = useMemo(() => modelDetail?.model || modelDetail || null, [modelDetail]);
   const modelNote = useMemo(() => modelSummary?.note ?? modelDetail?.note ?? null, [modelDetail, modelSummary]);
   const modelWarnings = useMemo(
@@ -823,18 +933,18 @@ export default function EvaluatioClassify() {
     [modelDetail, modelSummary]
   );
   const taskCategory = useMemo(
-    () => modelSummary?.task_category || modelDetail?.evaluation?.task_category || '',
-    [modelDetail, modelSummary]
+    () => selectedEvaluationResult?.task_category || modelSummary?.task_category || '',
+    [selectedEvaluationResult, modelSummary]
   );
   const metricDefinitions = useMemo(() => getMetricDefinitions(taskCategory), [taskCategory]);
-  const evaluationLabels = useMemo(() => getEvaluationLabels(modelDetail?.evaluation), [modelDetail]);
+  const evaluationLabels = useMemo(() => getEvaluationLabels(selectedEvaluationResult), [selectedEvaluationResult]);
   const trainingConfusionMatrix = useMemo(
-    () => normalizeConfusionMatrix(getConfusionMatrixSource(modelDetail?.evaluation, 'training'), evaluationLabels),
-    [evaluationLabels, modelDetail]
+    () => normalizeConfusionMatrix(getConfusionMatrixSource(selectedEvaluationResult, 'training'), evaluationLabels),
+    [evaluationLabels, selectedEvaluationResult]
   );
   const testingConfusionMatrix = useMemo(
-    () => normalizeConfusionMatrix(getConfusionMatrixSource(modelDetail?.evaluation, 'testing'), evaluationLabels),
-    [evaluationLabels, modelDetail]
+    () => normalizeConfusionMatrix(getConfusionMatrixSource(selectedEvaluationResult, 'testing'), evaluationLabels),
+    [evaluationLabels, selectedEvaluationResult]
   );
   const isClassification = useMemo(() => isClassificationTask(taskCategory), [taskCategory]);
   const hasTestingConfusionMatrix = useMemo(
@@ -961,6 +1071,9 @@ export default function EvaluatioClassify() {
                 {modelDetailError ? (
                   <p className="text-xs font-medium text-red-600">{modelDetailError}</p>
                 ) : null}
+                {evaluationResultError ? (
+                  <p className="text-xs font-medium text-red-600">{evaluationResultError}</p>
+                ) : null}
               </div>
             </header>
 
@@ -971,7 +1084,7 @@ export default function EvaluatioClassify() {
                 data={trainingChartData}
                 taskCategory={taskCategory}
                 confusionMatrix={trainingConfusionMatrix}
-                loading={isTrainingCsvLoading}
+                loading={isEvaluationResultLoading}
                 onExport={handleTrainingExport}
                 exportDisabled={!trainingCsvContent || isTrainingCsvLoading}
               />
@@ -982,9 +1095,9 @@ export default function EvaluatioClassify() {
                 data={testingChartData}
                 taskCategory={taskCategory}
                 confusionMatrix={testingConfusionMatrix}
-                loading={isModelDetailLoading}
+                loading={isEvaluationResultLoading}
                 onExport={handleTestingExport}
-                exportDisabled={(isClassification ? !hasTestingConfusionMatrix : !testingChartData.length) || isModelDetailLoading}
+                exportDisabled={(isClassification ? !hasTestingConfusionMatrix : !testingChartData.length) || isEvaluationResultLoading}
               />
 
               <motion.div
