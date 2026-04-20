@@ -22,6 +22,33 @@ function extractTrainingJobId(payload) {
     );
 }
 
+function formatErrorDetail(detail) {
+    if (typeof detail === 'string') {
+        return detail;
+    }
+
+    if (Array.isArray(detail)) {
+        return detail
+            .map((item) => formatErrorDetail(item))
+            .filter(Boolean)
+            .join(' ');
+    }
+
+    if (detail && typeof detail === 'object') {
+        if (typeof detail.message === 'string') {
+            return detail.message;
+        }
+
+        if (typeof detail.detail === 'string') {
+            return detail.detail;
+        }
+
+        return JSON.stringify(detail);
+    }
+
+    return '';
+}
+
 function parseNumberList(value) {
     return String(value ?? '')
         .split(',')
@@ -152,6 +179,7 @@ export default function ModelSet() {
     const [svmKernel, setSvmKernel] = useState('linear');
     const [enableGridSearch, setEnableGridSearch] = useState(false);
     const [showLoading, setShowLoading] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
     const [plsComponents, setPlsComponents] = useState('12');
     const [svrC, setSvrC] = useState('1.0');
@@ -174,7 +202,7 @@ export default function ModelSet() {
         hasActiveTraining,
         beginTraining,
         setTrainingJobId,
-        setTrainingError
+        clearTrainingSession
     } = useTraining();
     const isGridSearch = enableGridSearch;
     const showRegressionGridSearchParams =
@@ -217,6 +245,10 @@ export default function ModelSet() {
     };
 
     const handleTrain = async () => {
+        if (isSubmitting || showLoading) {
+            return;
+        }
+
         if (hasActiveTraining) {
             setSubmitError('目前已有模型訓練進行中，請至「模型訓練中」頁面查看狀態。');
             return;
@@ -294,6 +326,7 @@ export default function ModelSet() {
                 .map(([name]) => name)
         };
         beginTraining(nextTrainingSummary);
+        setIsSubmitting(true);
         setShowLoading(true);
         setSubmitError('');
 
@@ -312,9 +345,18 @@ export default function ModelSet() {
                 : await response.text().catch(() => '');
 
             if (!response.ok) {
-                const detail = typeof responseBody === 'string'
-                    ? responseBody
-                    : responseBody?.detail || responseBody?.message || JSON.stringify(responseBody);
+                const detail = formatErrorDetail(
+                    typeof responseBody === 'string'
+                        ? responseBody
+                        : responseBody?.detail ?? responseBody?.message ?? responseBody
+                );
+
+                if (response.status === 409) {
+                    throw new Error(
+                        detail || '目前已有訓練進行中，不能再加入新的訓練。請至「模型訓練中」頁面查看狀態。'
+                    );
+                }
+
                 throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
             }
 
@@ -326,9 +368,11 @@ export default function ModelSet() {
             setTrainingJobId(String(nextTrainingJobId));
         } catch (error) {
             const message = error instanceof Error ? error.message : '模型訓練失敗';
+            clearTrainingSession();
             setSubmitError(message);
-            setTrainingError(message);
             setShowLoading(false);
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -520,16 +564,7 @@ export default function ModelSet() {
 
                                 {activeTab === 'classification' && (
                                     <div className="space-y-4">
-                                        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                                            <div className="max-w-xs">
-                                                <InputGroup
-                                                    label="n_classes:"
-                                                    value={nClasses}
-                                                    onChange={setNClasses}
-                                                    placeholder=""
-                                                />
-                                            </div>
-                                        </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
                                             <ModelCard
                                                 id="svm"
@@ -879,9 +914,9 @@ export default function ModelSet() {
                 </main>
 
                 <Footer
-                    primaryLabel={hasActiveTraining ? '模型訓練中' : '下一步:確定訓練'}
+                    primaryLabel={hasActiveTraining || isSubmitting ? '模型訓練中' : '下一步:確定訓練'}
                     onPrimaryClick={handleTrain}
-                    primaryDisabled={hasActiveTraining}
+                    primaryDisabled={hasActiveTraining || isSubmitting}
                     secondaryLabel="上一步"
                     secondaryTo="/preprocessing"
                     secondaryState={{

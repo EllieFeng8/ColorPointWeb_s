@@ -635,38 +635,6 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              {requiredExtensions.map((extension) => {
-                const matchedFile = files.find((file) => file.extension === extension);
-                const isReady = matchedFile?.status === 'uploaded';
-
-                return (
-                  <div
-                    key={extension}
-                    className={`rounded-2xl border px-5 py-4 ${
-                      isReady
-                        ? 'border-[#82b091]/30 bg-[#82b091]/10'
-                        : 'border-amber-200 bg-amber-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-bold text-[#111827]">{getRequirementLabel(extension)}</p>
-                        <p className="mt-1 text-sm text-slate-500">必填格式：{extension}</p>
-                      </div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${
-                          isReady ? 'bg-white text-[#659475]' : 'bg-white text-amber-600'
-                        }`}
-                      >
-                        {isReady ? '已上傳' : '尚未上傳'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
             {hasPendingSelection && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-700">
                 尚缺 {missingRequiredFiles.map(getRequirementLabel).join('、')}，請補齊後才可進入下一步。
