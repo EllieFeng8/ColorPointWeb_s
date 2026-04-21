@@ -1,10 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { FileText, CloudUpload, Trash2, CheckCircle2 } from 'lucide-react';
+import { FileText, CloudUpload, Trash2, CheckCircle2, Download } from 'lucide-react';
 import swal from 'sweetalert';
 import { useNavigate } from 'react-router-dom';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
+import regressionReferenceCsvUrl from '../../sample_data.csv?url';
+import classificationReferenceCsvUrl from '../../sample_data_cls.csv?url';
+import instrumentConfigReferenceJsonUrl from '../../instrument_config.json?url';
 
 const initialFiles = [];
 const uploadEndpoint = '/api/upload/';
@@ -13,6 +16,15 @@ const requiredExtensions = ['.csv', '.json'];
 const taskCategoryOptions = [
   { value: 'regression', label: '回歸模型', description: '適用於連續數值預測' },
   { value: 'classification', label: '分類模型', description: '適用於類別標籤判斷' }
+];
+const referenceDownloads = [
+  { label: '下載回歸範例 CSV', href: regressionReferenceCsvUrl, fileName: 'sample_data.csv' },
+  { label: '下載分類範例 CSV', href: classificationReferenceCsvUrl, fileName: 'sample_data_cls.csv' },
+  {
+    label: '下載 JSON 範例',
+    href: instrumentConfigReferenceJsonUrl,
+    fileName: 'instrument_config.json'
+  }
 ];
 
 function getUploadRecordId(payload) {
@@ -601,6 +613,30 @@ export default function Home() {
           </header>
 
           <section className="space-y-6">
+            <div className="rounded-2xl border border-slate-100 bg-white px-6 py-5 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold text-[#111827]">下載參考格式</h3>
+                  <p className="text-sm text-slate-500">
+                    提供回歸、分類與 `.json` 設定檔範例，請依對應格式整理後再上傳。
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  {referenceDownloads.map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      download={item.fileName}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-[#82b091]/30 bg-[#82b091]/10 px-4 py-2.5 text-sm font-bold text-[#4f7960] transition-colors hover:border-[#82b091] hover:bg-[#82b091]/20"
+                    >
+                      <Download size={16} />
+                      {item.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-2xl border border-slate-100 bg-white px-6 py-5 shadow-sm">
               <div className="space-y-4">
                 <div>

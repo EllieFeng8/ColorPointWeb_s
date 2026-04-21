@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, ExternalLink, Tag } from 'lucide-react';
+import { Download, Save, Tag } from 'lucide-react';
 import {
   CartesianGrid,
   ReferenceLine,
@@ -38,20 +38,6 @@ function downloadFile(filename, content, mimeType) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-}
-
-function getFilenameFromContentDisposition(contentDisposition) {
-  if (!contentDisposition) {
-    return '';
-  }
-
-  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
-  if (utf8Match?.[1]) {
-    return decodeURIComponent(utf8Match[1]);
-  }
-
-  const asciiMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
-  return asciiMatch?.[1] || '';
 }
 
 function downloadCsv(filename, rows) {
@@ -190,6 +176,20 @@ function normalizeEvaluationResults(payload) {
   return payload ? [payload] : [];
 }
 
+function extractPreprocessingId(payload) {
+  return (
+    payload?.preprocessing_id ??
+    payload?.preprocessingId ??
+    payload?.job?.preprocessing_id ??
+    payload?.job?.preprocessingId ??
+    payload?.result?.preprocessing_id ??
+    payload?.result?.preprocessingId ??
+    payload?.data?.preprocessing_id ??
+    payload?.data?.preprocessingId ??
+    ''
+  );
+}
+
 function pickEvaluationResultRecord(records, activeModelId, activeTrainingJobId) {
   if (!records.length) {
     return null;
@@ -232,7 +232,6 @@ const CLASSIFICATION_METRICS = [
   { key: 'accuracy', label: 'Accuracy' },
   { key: 'precision_score', label: 'Precision Score' },
   { key: 'precision', label: 'Precision' },
-  { key: 'recall_score', label: 'Recall Score' },
   { key: 'recall', label: 'Recall' },
   { key: 'f1_score', label: 'F1 Score' },
 ];
@@ -681,8 +680,8 @@ export default function EvaluatioClassify() {
   );
   const activeModelId = String(routedModelId || contextBestModelId || '');
 
-  const [fileName, setFileName] = useState('Spectro_Model_Alpha');
-  const [version, setVersion] = useState('v2.1.0');
+  const [fileName, setFileName] = useState('');
+  const [version, setVersion] = useState('');
   const [trainingCsvContent, setTrainingCsvContent] = useState('');
   const [isTrainingCsvLoading, setIsTrainingCsvLoading] = useState(false);
   const [trainingCsvError, setTrainingCsvError] = useState('');
@@ -696,6 +695,7 @@ export default function EvaluatioClassify() {
   const [modelDetailError, setModelDetailError] = useState('');
   const [modelExportError, setModelExportError] = useState('');
   const [isModelExporting, setIsModelExporting] = useState(false);
+  const [modelExportSuccess, setModelExportSuccess] = useState('');
 
   useEffect(() => {
     if (!activeTrainingJobId) {
@@ -932,6 +932,15 @@ export default function EvaluatioClassify() {
     () => normalizeWarningMessages(modelSummary?.warnings ?? modelDetail?.warnings),
     [modelDetail, modelSummary]
   );
+  const preprocessingId = useMemo(
+    () => (
+      location.state?.preprocessingId ||
+      extractPreprocessingId(trainingJobDetail) ||
+      extractPreprocessingId(modelDetail) ||
+      extractPreprocessingId(selectedEvaluationResult)
+    ),
+    [location.state?.preprocessingId, trainingJobDetail, modelDetail, selectedEvaluationResult]
+  );
   const taskCategory = useMemo(
     () => selectedEvaluationResult?.task_category || modelSummary?.task_category || '',
     [selectedEvaluationResult, modelSummary]
@@ -957,6 +966,14 @@ export default function EvaluatioClassify() {
     [trainingJobDetail]
   );
   const hyperparameterConfig = useMemo(() => Object.entries(hyperparameterTuning || {}), [hyperparameterTuning]);
+
+  useEffect(() => {
+    setFileName(modelSummary?.model_name ?? '');
+  }, [activeModelId, modelSummary?.model_name]);
+
+  useEffect(() => {
+    setVersion(modelNote ?? '');
+  }, [activeModelId, modelNote]);
 
   const handleTrainingExport = async () => {
     if (!trainingCsvContent) {
@@ -997,35 +1014,68 @@ export default function EvaluatioClassify() {
 
   const handleModelExport = async () => {
     if (!activeModelId) {
-      setModelExportError('缺少 best_model_id，無法下載模型檔案。');
+      setModelExportError('缺少 best_model_id，無法儲存模型。');
+      setModelExportSuccess('');
+      return;
+    }
+
+    if (!preprocessingId) {
+      setModelExportError('缺少 preprocessing_id，無法儲存模型。');
+      setModelExportSuccess('');
+      return;
+    }
+
+    if (!fileName.trim()) {
+      setModelExportError('請填寫 Model Name。');
+      setModelExportSuccess('');
       return;
     }
 
     setIsModelExporting(true);
     setModelExportError('');
-
-    const safeName = (fileName || 'model-export').trim().replace(/[\\/:*?"<>|]/g, '_');
-    const fallbackFilename = `${safeName || 'model-export'}-${version || 'v1.0.0'}.pkl`;
+    setModelExportSuccess('');
 
     try {
-      const response = await fetch(`/api/modeling/models/${encodeURIComponent(activeModelId)}/download`, {
-        method: 'GET',
-        headers: { Accept: 'application/octet-stream' }
+      const payload = {
+        name: fileName.trim(),
+        description: version.trim(),
+        task_category: taskCategory || 'regression',
+        model_ids: [activeModelId],
+        preprocessing_id: preprocessingId
+      };
+      console.log('[EvaluatioClassify] Saving default model payload:', payload);
+
+      const response = await fetch('/api/default-models/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      const rawText = await response.text().catch(() => '');
+      const body = parseResponseBody(rawText, contentType);
+      console.log('[EvaluatioClassify] Save default model response:', {
+        status: response.status,
+        ok: response.ok,
+        body
       });
 
       if (!response.ok) {
-        const detail = await response.text().catch(() => '');
+        const detail = extractErrorDetail(body);
         throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
       }
-
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('content-disposition') || '';
-      const filename = getFilenameFromContentDisposition(contentDisposition) || fallbackFilename;
-
-      downloadFile(filename, blob, blob.type || 'application/octet-stream');
+      const successMessage = typeof body === 'string'
+        ? body
+        : body?.message || body?.detail || '模型已儲存。';
+      setModelExportSuccess(successMessage);
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        setModelExportError(error instanceof Error ? error.message : '下載模型檔案失敗');
+        console.log('[EvaluatioClassify] Save default model failed:', error);
+        setModelExportError(error instanceof Error ? error.message : '儲存模型失敗');
+        setModelExportSuccess('');
       }
     } finally {
       setIsModelExporting(false);
@@ -1107,15 +1157,19 @@ export default function EvaluatioClassify() {
                 className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
               >
                 <div className="mb-6">
-                  <h3 className="font-bold text-slate-800">模型匯出 (Model Export)</h3>
-                  <p className="mt-1 text-[11px] font-bold uppercase tracking-tight text-slate-400">
-                    配置並匯出最終預測模型
-                  </p>
+                  <h3 className="font-bold text-slate-800">模型儲存</h3>
+
                   {!activeModelId ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">缺少 best_model_id，暫時無法匯出模型詳情。</p>
+                    <p className="mt-2 text-xs font-medium text-red-600">缺少 best_model_id，暫時無法儲存模型。</p>
+                  ) : null}
+                  {!preprocessingId ? (
+                    <p className="mt-2 text-xs font-medium text-red-600">缺少 preprocessing_id，暫時無法儲存模型。</p>
                   ) : null}
                   {modelExportError ? (
                     <p className="mt-2 text-xs font-medium text-red-600">{modelExportError}</p>
+                  ) : null}
+                  {modelExportSuccess ? (
+                    <p className="mt-2 text-xs font-medium text-emerald-600">{modelExportSuccess}</p>
                   ) : null}
                 </div>
 
@@ -1128,7 +1182,7 @@ export default function EvaluatioClassify() {
                 >
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      文件名字 (File Name)
+                      Model Name
                     </label>
                     <input
                       type="text"
@@ -1140,7 +1194,7 @@ export default function EvaluatioClassify() {
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      版本號 (Version)
+                      Note
                     </label>
                     <div className="relative">
                       <Tag className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
@@ -1155,16 +1209,16 @@ export default function EvaluatioClassify() {
 
                   <button
                     type="submit"
-                    disabled={isModelExporting || !activeModelId}
+                    disabled={isModelExporting || !activeModelId || !preprocessingId}
                     className={cn(
                       'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold text-white shadow-sm transition-all active:scale-[0.98]',
-                      isModelExporting || !activeModelId
+                      isModelExporting || !activeModelId || !preprocessingId
                         ? 'cursor-not-allowed bg-slate-300'
                         : 'bg-primary hover:bg-primary-hover'
                     )}
                   >
-                    <ExternalLink className="size-5" />
-                    {isModelExporting ? '匯出中...' : '匯出 (Export)'}
+                    <Save className="size-5" />
+                    {isModelExporting ? '儲存中...' : '儲存模型'}
                   </button>
                 </form>
               </motion.div>

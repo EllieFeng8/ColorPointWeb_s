@@ -181,18 +181,18 @@ export default function ModelSet() {
     const [showLoading, setShowLoading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState('');
-    const [plsComponents, setPlsComponents] = useState('12');
+    const [plsComponents, setPlsComponents] = useState('3');
     const [svrC, setSvrC] = useState('1.0');
     const [svrTol, setSvrTol] = useState('0.001');
-    const [rfEstimators, setRfEstimators] = useState('100');
-    const [xgboostEstimators, setXgboostEstimators] = useState('100');
-    const [xgboostMaxDepth, setXgboostMaxDepth] = useState('6');
+    const [rfEstimators, setRfEstimators] = useState('10');
+    const [xgboostEstimators, setXgboostEstimators] = useState('10');
+    const [xgboostMaxDepth, setXgboostMaxDepth] = useState('3');
     const [svmC, setSvmC] = useState('1.0');
     const [svmTol, setSvmTol] = useState('0.001');
     const [ldaEstimators, setLdaEstimators] = useState('');
-    const [kmeansNeighbors, setKmeansNeighbors] = useState('');
+    const [kmeansNeighbors, setKmeansNeighbors] = useState('2');
     const [nClasses, setNClasses] = useState('');
-    const [kFoldValue, setKFoldValue] = useState('10');
+    const [kFoldValue, setKFoldValue] = useState('5');
     const {
         trainingJobId,
         progress,
@@ -264,10 +264,6 @@ export default function ModelSet() {
             return;
         }
 
-        if (activeTab === 'pca') {
-            setSubmitError('目前尚未支援 PCA 訓練 API。');
-            return;
-        }
 
         const selectedRegressionModelKey = {
             pls: 'PLS',
@@ -430,11 +426,7 @@ export default function ModelSet() {
                                 onClick={() => setActiveTab('classification')}
                                 label="分類 (Classification)"
                             />
-                            <TabButton
-                                active={activeTab === 'pca'}
-                                onClick={() => setActiveTab('pca')}
-                                label="主成分分析 (PCA)"
-                            />
+
                         </div>
 
                         {/* Model Selection Section */}
@@ -650,44 +642,7 @@ export default function ModelSet() {
                                     </div>
                                 )}
 
-                                {activeTab === 'pca' && (
-                                    <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-slate-800">內容 (內容)</h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                                            <div className="p-6 border-r border-slate-100 flex flex-col">
-                                                <div className="space-y-6">
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-slate-400 uppercase mb-2 tracking-wider">Number of Components</label>
-                                                        <input
-                                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-2.5 px-4 focus:ring-1 focus:ring-[#659475] focus:border-[#659475] outline-none"
-                                                            placeholder="e.g. 5"
-                                                            type="number"
-                                                        />
-                                                        <p className="text-[11px] text-slate-400 mt-2 italic">Select the dimensionality of output space</p>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-slate-400 uppercase mb-2 tracking-wider">SVD Solver</label>
-                                                        <select className="w-full bg-slate-50 border border-slate-200 rounded-lg text-sm py-2.5 px-4 focus:ring-1 focus:ring-[#659475] focus:border-[#659475] outline-none appearance-none">
-                                                            <option>Auto</option>
-                                                            <option>Full</option>
-                                                            <option>Arpack</option>
-                                                            <option>Randomized</option>
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="p-6 flex flex-col justify-between">
-                                                <div className="space-y-6">
-                                                    <ToggleGroup label="Whiten" defaultChecked />
-                                                    <ToggleGroup label="Iterative Power" />
-                                                    <p className="text-xs text-slate-500 leading-relaxed border-t border-slate-50 pt-6">
-                                                        Principal component analysis (PCA) is used to simplify complexity in high-dimensional data while retaining trends and patterns.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
+
                             </motion.div>
                         </AnimatePresence>
 

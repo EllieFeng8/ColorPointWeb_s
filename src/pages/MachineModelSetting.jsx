@@ -52,6 +52,28 @@ function flattenDefaultModelOptions(payload) {
   });
 }
 
+function buildCurrentModelList(payload) {
+  const uniqueModels = new Map();
+
+  flattenDefaultModelOptions(payload).forEach((item) => {
+    const modelName = item.modelName?.trim() || '';
+    const name = item.name?.trim() || '';
+    const description = item.description?.trim() || '';
+    const uniqueKey = `${modelName}__${name}__${description}`;
+
+    if (!uniqueModels.has(uniqueKey)) {
+      uniqueModels.set(uniqueKey, {
+        key: item.key,
+        modelName: modelName || '--',
+        name: name || '--',
+        description: description || '--'
+      });
+    }
+  });
+
+  return Array.from(uniqueModels.values());
+}
+
 function createEditableModel(name = '', modelName = '') {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -63,9 +85,7 @@ function createEditableModel(name = '', modelName = '') {
 export default function MachineModelSetting() {
   const [modelNames, setModelNames] = useState([]);
   const [defaultModelOptions, setDefaultModelOptions] = useState([]);
-  const [selectedDefaultModelKey, setSelectedDefaultModelKey] = useState('');
-  const [selectedDefaultModel, setSelectedDefaultModel] = useState(null);
-  const [selectedModelName, setSelectedModelName] = useState('');
+  const [currentModelList, setCurrentModelList] = useState([]);
   const [isLoadingNames, setIsLoadingNames] = useState(true);
   const [namesError, setNamesError] = useState('');
   const [isLoadingCurrentModel, setIsLoadingCurrentModel] = useState(true);
@@ -78,18 +98,6 @@ export default function MachineModelSetting() {
   const [currentPreprocessingId, setCurrentPreprocessingId] = useState('');
   const [editableModels, setEditableModels] = useState([createEditableModel()]);
   const [isSavingCurrentModel, setIsSavingCurrentModel] = useState(false);
-  const syncSelectedDefaultModel = (nextModel) => {
-    setSelectedDefaultModel(nextModel);
-    setSelectedModelName(nextModel?.modelName ?? '');
-    setGroupName(nextModel?.name ?? '');
-    setDescription(nextModel?.description ?? '');
-    setTaskCategory(nextModel?.taskCategory || 'regression');
-    setCurrentModelId(nextModel?.trainedModelId ?? '');
-    setCurrentPreprocessingId(nextModel?.preprocessingId ?? '');
-    setEditableModels([
-      createEditableModel(nextModel?.name ?? '', nextModel?.modelName ?? '')
-    ]);
-  };
 
   const loadModelNames = async () => {
     setIsLoadingNames(true);
@@ -144,24 +152,32 @@ export default function MachineModelSetting() {
 
       const payload = await response.json().catch(() => null);
       const nextOptions = flattenDefaultModelOptions(payload);
-      const nextKey = (
-        selectedDefaultModelKey && nextOptions.some((item) => item.key === selectedDefaultModelKey)
-          ? selectedDefaultModelKey
-          : (nextOptions[0]?.key ?? '')
-      );
-      const nextModel = nextOptions.find((item) => item.key === nextKey) ?? null;
+      const nextModelList = buildCurrentModelList(payload);
+      const nextModel = nextOptions[0] ?? null;
 
       setDefaultModelOptions(nextOptions);
-      setSelectedDefaultModelKey(nextKey);
-      syncSelectedDefaultModel(nextModel);
+      setCurrentModelList(nextModelList);
+      setGroupName(nextModel?.name ?? '');
+      setDescription(nextModel?.description ?? '');
+      setTaskCategory(nextModel?.taskCategory || 'regression');
+      setCurrentModelId(nextModel?.trainedModelId ?? '');
+      setCurrentPreprocessingId(nextModel?.preprocessingId ?? '');
+      setEditableModels([
+        createEditableModel(nextModel?.name ?? '', nextModel?.modelName ?? '')
+      ]);
 
       if (nextOptions.length === 0) {
         setCurrentModelError('目前沒有可用的預設模型群組。');
       }
     } catch (error) {
       setDefaultModelOptions([]);
-      setSelectedDefaultModelKey('');
-      syncSelectedDefaultModel(null);
+      setCurrentModelList([]);
+      setGroupName('');
+      setDescription('');
+      setTaskCategory('regression');
+      setCurrentModelId('');
+      setCurrentPreprocessingId('');
+      setEditableModels([createEditableModel()]);
       setCurrentModelError(
         error instanceof Error ? `目前模型讀取失敗：${error.message}` : '目前模型讀取失敗。'
       );
@@ -348,15 +364,15 @@ export default function MachineModelSetting() {
               <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Current Model
+                    Current Models
                   </p>
                   <p className="mt-3 text-2xl font-bold text-[#111827]">
-                    {selectedDefaultModel?.modelName || '--'}
+                    {isLoadingCurrentModel ? '--' : currentModelList.length}
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
                     {isLoadingCurrentModel
                       ? '目前模型載入中...'
-                      : currentModelError || `目前共 ${defaultModelOptions.length} 個可選 model_name`}
+                      : currentModelError || `目前共 ${currentModelList.length} 個不重複模型`}
                   </p>
                 </div>
 
@@ -368,56 +384,45 @@ export default function MachineModelSetting() {
                     目前模型直接來自預設模型群組 API。
                   </p>
                   <p className="mt-2 text-sm text-slate-500">
-                    用 `model_name` 當作篩選選項，選中後顯示對應內容。
+                    直接列出 API 內全部模型，重複項目不重複顯示。
                   </p>
                 </div>
               </div>
 
               <div className="mt-6 space-y-5">
-                <Field label="model_name">
-                  <div className="relative">
-                    <select
-                      value={selectedDefaultModelKey}
-                      onChange={(event) => {
-                        const nextKey = event.target.value;
-                        setSelectedDefaultModelKey(nextKey);
-                        const nextModel = defaultModelOptions.find((item) => item.key === nextKey) ?? null;
-                        syncSelectedDefaultModel(nextModel);
-                      }}
-                      disabled={isLoadingCurrentModel || defaultModelOptions.length === 0}
-                      className="w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 pr-12 text-sm font-medium text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-                    >
-                      <option value="">
-                        {isLoadingCurrentModel ? '讀取中...' : '請選擇 model_name'}
-                      </option>
-                      {defaultModelOptions.map((item) => (
-                        <option key={item.key} value={item.key}>
-                          {item.modelName || '--'}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                {isLoadingCurrentModel ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-500">
+                    目前模型載入中...
                   </div>
-                </Field>
+                ) : null}
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <ReadonlyField
-                    label="name"
-                    value={selectedDefaultModel?.name || '--'}
-                  />
-                  <ReadonlyField
-                    label="description"
-                    value={selectedDefaultModel?.description || '--'}
-                  />
-                  <ReadonlyField
-                    label="trained_model_id"
-                    value={selectedDefaultModel?.trainedModelId || '--'}
-                  />
-                  <ReadonlyField
-                    label="model_name"
-                    value={selectedDefaultModel?.modelName || '--'}
-                  />
-                </div>
+                {!isLoadingCurrentModel && currentModelError ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-600">
+                    {currentModelError}
+                  </div>
+                ) : null}
+
+                {!isLoadingCurrentModel && !currentModelError && currentModelList.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-500">
+                    目前沒有可用的模型資料。
+                  </div>
+                ) : null}
+
+                {!isLoadingCurrentModel && !currentModelError && currentModelList.length > 0 ? (
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {currentModelList.map((item) => (
+                      <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <ReadonlyField label="model_name" value={item.modelName} />
+                        <div className="mt-4">
+                          <ReadonlyField label="name" value={item.name} />
+                        </div>
+                        <div className="mt-4">
+                          <ReadonlyField label="description" value={item.description} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -514,7 +519,7 @@ export default function MachineModelSetting() {
                 <button
                   type="button"
                   onClick={handleSaveCurrentModel}
-                  disabled={isSavingCurrentModel || !selectedDefaultModel}
+                  disabled={isSavingCurrentModel || defaultModelOptions.length === 0}
                   className="inline-flex items-center gap-2 rounded-2xl bg-[#82b091] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all hover:bg-[#659475] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                 >
                   <Save className="h-4 w-4" />
