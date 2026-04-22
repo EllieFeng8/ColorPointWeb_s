@@ -345,9 +345,7 @@ export default function MachineModelSetting() {
                   </div>
                   <div>
                     <h3 className="text-2xl font-bold text-[#111827]">目前模型</h3>
-                    <p className="text-sm text-slate-500">
-                      來源：`GET /api/default-models/`
-                    </p>
+
                   </div>
                 </div>
                 <button
@@ -369,24 +367,9 @@ export default function MachineModelSetting() {
                   <p className="mt-3 text-2xl font-bold text-[#111827]">
                     {isLoadingCurrentModel ? '--' : currentModelList.length}
                   </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    {isLoadingCurrentModel
-                      ? '目前模型載入中...'
-                      : currentModelError || `目前共 ${currentModelList.length} 個不重複模型`}
-                  </p>
                 </div>
 
-                <div className="rounded-2xl border border-slate-100 bg-white p-5">
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Model Source
-                  </p>
-                  <p className="mt-3 text-sm font-semibold text-slate-700">
-                    目前模型直接來自預設模型群組 API。
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500">
-                    直接列出 API 內全部模型，重複項目不重複顯示。
-                  </p>
-                </div>
+
               </div>
 
               <div className="mt-6 space-y-5">
@@ -433,9 +416,7 @@ export default function MachineModelSetting() {
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-[#111827]">修改模型</h3>
-                  <p className="text-sm text-slate-500">
-                    目前先整理可編輯欄位，送出功能仍受後端資料不足限制。
-                  </p>
+
                 </div>
               </div>
 
@@ -526,9 +507,7 @@ export default function MachineModelSetting() {
                   {isSavingCurrentModel ? '儲存中...' : '儲存修改'}
                 </button>
 
-                <p className="text-xs text-amber-700">
-                  會依照你選的多個 `model name` 對應 `trained_model_id`，再搭配目前的 `preprocessing_id` 建立預設模型群組。
-                </p>
+
               </div>
             </section>
           </div>
