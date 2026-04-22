@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Save, Tag } from 'lucide-react';
+import { Download, Maximize2, Save, Tag, X } from 'lucide-react';
 import {
   CartesianGrid,
   ReferenceLine,
@@ -230,6 +230,8 @@ const REGRESSION_METRICS = [
 
 const CLASSIFICATION_METRICS = [
   { key: 'accuracy', label: 'Accuracy' },
+  { key: 'auc', label: 'AUC' },
+  { key: 'roc_auc', label: 'ROC AUC' },
   { key: 'precision_score', label: 'Precision Score' },
   { key: 'precision', label: 'Precision' },
   { key: 'recall', label: 'Recall' },
@@ -496,14 +498,14 @@ const ConfusionMatrix = ({ labels, rows }) => {
         <div />
         {labels.map((label) => (
           <div key={`predicted-${label}`} className="px-2 py-1 text-center text-xs font-bold uppercase tracking-wider text-slate-400">
-            Pred {label}
+            Actual {label}
           </div>
         ))}
 
         {rows.map((row, rowIndex) => (
           <React.Fragment key={`actual-${labels[rowIndex]}`}>
             <div className="flex items-center px-2 py-1 text-xs font-bold uppercase tracking-wider text-slate-400">
-              Actual {labels[rowIndex]}
+              Pred {labels[rowIndex]}
             </div>
             {row.map((value, columnIndex) => {
               const intensity = maxValue ? value / maxValue : 0;
@@ -568,6 +570,35 @@ const ChartContainer = ({ className = '', children }) => {
   );
 };
 
+const ResponsiveScaleContainer = ({
+  className = '',
+  baseWidth,
+  baseHeight,
+  children,
+}) => (
+  <ChartContainer className={className}>
+    {({ width }) => {
+      const scale = width > 0 ? Math.min(1, width / baseWidth) : 1;
+      const scaledHeight = Math.max(Math.round(baseHeight * scale), 1);
+
+      return (
+        <div className="flex justify-center overflow-hidden" style={{ height: scaledHeight }}>
+          <div
+            style={{
+              width: baseWidth,
+              height: baseHeight,
+              transform: `scale(${scale})`,
+              transformOrigin: 'top center'
+            }}
+          >
+            {children({ width: baseWidth, height: baseHeight, scale })}
+          </div>
+        </div>
+      );
+    }}
+  </ChartContainer>
+);
+
 const ScatterTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) {
     return null;
@@ -597,78 +628,254 @@ const ScatterPanel = ({
   const domain = useMemo(() => getScatterDomain(data), [data]);
   const showConfusionMatrix = isClassificationTask(taskCategory);
   const resultCount = showConfusionMatrix ? getConfusionMatrixTotal(confusionMatrix) : data.length;
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const renderScatterChart = ({ fullscreen = false } = {}) => {
+    if (fullscreen) {
+      return (
+        <ChartContainer className="h-full w-full overflow-hidden rounded border border-slate-100 bg-slate-50/30">
+          {({ width, height }) => (
+            <ScatterChart width={width} height={height} margin={{ top: 20, right: 24, bottom: 18, left: 6 }}>
+              <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+              <XAxis
+                hide
+                type="number"
+                dataKey="actual"
+                domain={domain}
+                tick={{ fontSize: 11, fill: '#64748b' }}
+                tickFormatter={formatChartValue}
+                label={{ value: 'Actual', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
+              />
+              <YAxis
+                type="number"
+                dataKey="predicted"
+                domain={domain}
+                tick={{ fontSize: 11, fill: '#64748b' }}
+                tickFormatter={formatChartValue}
+                label={{ value: 'Predicted', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
+              />
+              <ZAxis type="number" range={[48, 48]} />
+              <ReferenceLine
+                segment={[
+                  { x: domain[0], y: domain[0] },
+                  { x: domain[1], y: domain[1] }
+                ]}
+                stroke="#94a3b8"
+                strokeDasharray="4 4"
+              />
+              <Tooltip content={<ScatterTooltip />} />
+              <Scatter data={data} fill="#659475" opacity={0.72} />
+            </ScatterChart>
+          )}
+        </ChartContainer>
+      );
+    }
+
+    return (
+      <ResponsiveScaleContainer
+        className="min-h-[14rem] w-full rounded border border-slate-100 bg-slate-50/30"
+        baseWidth={640}
+        baseHeight={224}
+      >
+        {({ width, height }) => (
+          <ScatterChart width={width} height={height} margin={{ top: 20, right: 24, bottom: 12, left: 6 }}>
+            <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
+            <XAxis
+              hide
+              type="number"
+              dataKey="actual"
+              domain={domain}
+              tick={{ fontSize: 11, fill: '#64748b' }}
+              tickFormatter={formatChartValue}
+              label={{ value: 'Actual', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
+            />
+            <YAxis
+              type="number"
+              dataKey="predicted"
+              domain={domain}
+              tick={{ fontSize: 11, fill: '#64748b' }}
+              tickFormatter={formatChartValue}
+              label={{ value: 'Predicted', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
+            />
+            <ZAxis type="number" range={[48, 48]} />
+            <ReferenceLine
+              segment={[
+                { x: domain[0], y: domain[0] },
+                { x: domain[1], y: domain[1] }
+              ]}
+              stroke="#94a3b8"
+              strokeDasharray="4 4"
+            />
+            <Tooltip content={<ScatterTooltip />} />
+            <Scatter data={data} fill="#659475" opacity={0.72} />
+          </ScatterChart>
+        )}
+      </ResponsiveScaleContainer>
+    );
+  };
+
+  const renderPanelBody = ({ fullscreen = false } = {}) => (
+    showConfusionMatrix
+      ? <ConfusionMatrix labels={confusionMatrix.labels} rows={confusionMatrix.rows} />
+      : renderScatterChart({ fullscreen })
+  );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="min-w-0 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-    >
-      <div className="flex flex-col gap-6">
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="font-bold text-slate-800">{title}</h3>
-            <p className="mt-1 text-[11px] font-bold text-slate-400">{subtitle}: {resultCount}</p>
+    <>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="min-w-0 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex justify-between items-start gap-3">
+            <div>
+              <h3 className="font-bold text-slate-800">{title}</h3>
+              <p className="mt-1 text-[11px] font-bold text-slate-400">{subtitle}: {resultCount}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-100"
+              >
+                <Maximize2 className="size-3.5" />
+                放大
+              </button>
+              <button
+                type="button"
+                onClick={onExport}
+                disabled={exportDisabled}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-colors',
+                  exportDisabled
+                    ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                )}
+              >
+                <Download className="size-3.5" />
+                {loading ? '載入中...' : exportLabel}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={exportDisabled}
-            className={cn(
-              'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-colors',
-              exportDisabled
-                ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300'
-                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-            )}
-          >
-            <Download className="size-3.5" />
-            {loading ? '載入中...' : exportLabel}
-          </button>
+
+          {renderPanelBody()}
         </div>
+      </motion.div>
 
-        {showConfusionMatrix ? (
-          <ConfusionMatrix labels={confusionMatrix.labels} rows={confusionMatrix.rows} />
-        ) : (
-          <ChartContainer className="h-56 min-h-[14rem] w-full overflow-hidden rounded border border-slate-100 bg-slate-50/30">
-            {({ width, height }) => (
-              <ScatterChart width={width} height={height} margin={{ top: 20, right: 24, bottom: 28, left: 6 }}>
-                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  dataKey="actual"
-                  domain={domain}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickFormatter={formatChartValue}
-                  label={{ value: 'Actual', position: 'insideBottom', offset: -10, fill: '#64748b', fontSize: 12 }}
-                />
-                <YAxis
-                  type="number"
-                  dataKey="predicted"
-                  domain={domain}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickFormatter={formatChartValue}
-                  label={{ value: 'Predicted', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
-                />
-                <ZAxis type="number" range={[48, 48]} />
-                <ReferenceLine
-                  segment={[
-                    { x: domain[0], y: domain[0] },
-                    { x: domain[1], y: domain[1] }
-                  ]}
-                  stroke="#94a3b8"
-                  strokeDasharray="4 4"
-                />
-                <Tooltip content={<ScatterTooltip />} />
-                <Scatter data={data} fill="#659475" opacity={0.72} />
-              </ScatterChart>
-            )}
-          </ChartContainer>
-        )}
-
-      </div>
-    </motion.div>
+      {isFullscreen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="flex h-[min(92vh,56rem)] w-[min(96vw,96rem)] flex-col rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-slate-800">{title}</h3>
+                <p className="mt-1 text-[11px] font-bold text-slate-400">{subtitle}: {resultCount}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(false)}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-100"
+              >
+                <X className="size-3.5" />
+                關閉
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {renderPanelBody({ fullscreen: true })}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 };
+
+const ModelSavePanel = ({
+  activeModelId,
+  preprocessingId,
+  fileName,
+  setFileName,
+  version,
+  setVersion,
+  modelExportError,
+  modelExportSuccess,
+  isModelExporting,
+  handleModelExport,
+  className = '',
+}) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ delay: 0.2 }}
+    className={cn('flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm', className)}
+  >
+    <div className="mb-6">
+      <h3 className="font-bold text-slate-800">模型儲存</h3>
+
+      {!activeModelId ? (
+        <p className="mt-2 text-xs font-medium text-red-600">缺少 best_model_id，暫時無法儲存模型。</p>
+      ) : null}
+      {!preprocessingId ? (
+        <p className="mt-2 text-xs font-medium text-red-600">缺少 preprocessing_id，暫時無法儲存模型。</p>
+      ) : null}
+      {modelExportError ? (
+        <p className="mt-2 text-xs font-medium text-red-600">{modelExportError}</p>
+      ) : null}
+      {modelExportSuccess ? (
+        <p className="mt-2 text-xs font-medium text-emerald-600">{modelExportSuccess}</p>
+      ) : null}
+    </div>
+
+    <form
+      className="flex flex-1 flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        handleModelExport();
+      }}
+    >
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Model Name
+        </label>
+        <input
+          type="text"
+          value={fileName}
+          onChange={(event) => setFileName(event.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+          Note
+        </label>
+        <div className="relative">
+          <Tag className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={version}
+            onChange={(event) => setVersion(event.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 pl-10 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={isModelExporting || !activeModelId || !preprocessingId}
+        className={cn(
+          'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold text-white shadow-sm transition-all active:scale-[0.98]',
+          isModelExporting || !activeModelId || !preprocessingId
+            ? 'cursor-not-allowed bg-slate-300'
+            : 'bg-primary hover:bg-primary-hover'
+        )}
+      >
+        <Save className="size-5" />
+        {isModelExporting ? '儲存中...' : '儲存模型'}
+      </button>
+    </form>
+  </motion.div>
+);
 
 export default function EvaluatioClassify() {
   const location = useLocation();
@@ -1127,7 +1334,7 @@ export default function EvaluatioClassify() {
               </div>
             </header>
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-1">
               <ScatterPanel
                 title="訓練結果 (Training Results)"
                 subtitle="樣本總數"
@@ -1149,81 +1356,22 @@ export default function EvaluatioClassify() {
                 onExport={handleTestingExport}
                 exportDisabled={(isClassification ? !hasTestingConfusionMatrix : !testingChartData.length) || isEvaluationResultLoading}
               />
-
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-              >
-                <div className="mb-6">
-                  <h3 className="font-bold text-slate-800">模型儲存</h3>
-
-                  {!activeModelId ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">缺少 best_model_id，暫時無法儲存模型。</p>
-                  ) : null}
-                  {!preprocessingId ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">缺少 preprocessing_id，暫時無法儲存模型。</p>
-                  ) : null}
-                  {modelExportError ? (
-                    <p className="mt-2 text-xs font-medium text-red-600">{modelExportError}</p>
-                  ) : null}
-                  {modelExportSuccess ? (
-                    <p className="mt-2 text-xs font-medium text-emerald-600">{modelExportSuccess}</p>
-                  ) : null}
-                </div>
-
-                <form
-                  className="flex flex-1 flex-col gap-4"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    handleModelExport();
-                  }}
-                >
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Model Name
-                    </label>
-                    <input
-                      type="text"
-                      value={fileName}
-                      onChange={(event) => setFileName(event.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                      Note
-                    </label>
-                    <div className="relative">
-                      <Tag className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        value={version}
-                        onChange={(event) => setVersion(event.target.value)}
-                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 pl-10 text-sm outline-none transition-all focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isModelExporting || !activeModelId || !preprocessingId}
-                    className={cn(
-                      'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold text-white shadow-sm transition-all active:scale-[0.98]',
-                      isModelExporting || !activeModelId || !preprocessingId
-                        ? 'cursor-not-allowed bg-slate-300'
-                        : 'bg-primary hover:bg-primary-hover'
-                    )}
-                  >
-                    <Save className="size-5" />
-                    {isModelExporting ? '儲存中...' : '儲存模型'}
-                  </button>
-                </form>
-              </motion.div>
             </div>
+            <div className="mt-6 grid grid-cols-1 gap-6 pb-4">
 
+            <ModelSavePanel
+                activeModelId={activeModelId}
+                preprocessingId={preprocessingId}
+                fileName={fileName}
+                setFileName={setFileName}
+                version={version}
+                setVersion={setVersion}
+                modelExportError={modelExportError}
+                modelExportSuccess={modelExportSuccess}
+                isModelExporting={isModelExporting}
+                handleModelExport={handleModelExport}
+            />
+            </div>
             <div className="mt-6 grid grid-cols-1 gap-6 pb-4">
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
@@ -1234,9 +1382,7 @@ export default function EvaluatioClassify() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h3 className="font-bold text-slate-800">模型資訊 (Model Summary)</h3>
-                    <p className="mt-1 text-[11px] font-bold uppercase tracking-tight text-slate-400">
-                      來自模型詳細資訊 API 的 model 區塊
-                    </p>
+
                   </div>
                 </div>
 

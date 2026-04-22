@@ -141,8 +141,8 @@ export default function Preprocessing() {
   const [derivativeOrder, setDerivativeOrder] = useState('1');
   const [normalizationType, setNormalizationType] = useState('mean');
   const [wavelengthMethod, setWavelengthMethod] = useState('manual_clip');
-  const [manualStart, setManualStart] = useState('1000');
-  const [manualEnd, setManualEnd] = useState('1500');
+  const [manualStart, setManualStart] = useState('900');
+  const [manualEnd, setManualEnd] = useState('1698');
   const [vipThreshold, setVipThreshold] = useState('1.2');
   const [rfTopN, setRfTopN] = useState('20');
   const [carsIterations, setCarsIterations] = useState('20');
@@ -885,7 +885,7 @@ export default function Preprocessing() {
                                 value={manualStart}
                                 onChange={(event) => setManualStart(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
-                                placeholder="1000"
+                                placeholder="900"
                                 type="number"
                                 step="any"
                               />
@@ -896,7 +896,7 @@ export default function Preprocessing() {
                                 value={manualEnd}
                                 onChange={(event) => setManualEnd(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
-                                placeholder="1500"
+                                placeholder="1698"
                                 type="number"
                                 step="any"
                               />

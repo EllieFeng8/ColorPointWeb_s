@@ -106,12 +106,37 @@ function parsePredictionCsv(text) {
   };
 }
 
-function formatPredictionResult(body) {
-  if (typeof body === 'string') {
-    return body;
+function getPredictionSummary(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return '--';
   }
 
-  return JSON.stringify(body, null, 2);
+  const taskCategory = String(body.task_category || '').trim().toLowerCase();
+  if (taskCategory === 'classification') {
+    return body?.detail?.predicted_class_from_proba ?? '--';
+  }
+
+  if (taskCategory === 'regression') {
+    return body?.value ?? '--';
+  }
+
+  if (body?.detail?.predicted_class_from_proba !== undefined) {
+    return body.detail.predicted_class_from_proba;
+  }
+
+  if (body?.value !== undefined) {
+    return body.value;
+  }
+
+  return '--';
+}
+
+function formatPredictionSummary(summary) {
+  if (typeof summary === 'number') {
+    return Number.isFinite(summary) ? summary.toFixed(3) : '--';
+  }
+
+  return String(summary ?? '--');
 }
 
 export default function Prediction() {
@@ -286,7 +311,7 @@ export default function Prediction() {
         modelName: selectedModelName,
         sampleLabel: selectedSampleLabel,
         fileName: selectedDataFile.name,
-        content: formatPredictionResult(body)
+        summary: getPredictionSummary(body)
       });
 
       requestAnimationFrame(() => {
@@ -516,10 +541,14 @@ export default function Prediction() {
               </div>
 
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-inner">
-
-                <pre className="overflow-x-auto whitespace-pre-wrap break-words text-sm leading-7 text-slate-800">
-                  {predictionResult.content}
-                </pre>
+                <div className="mb-5 rounded-2xl border border-[#82b091]/20 bg-[#82b091]/5 px-5 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    預測結果
+                  </p>
+                  <p className="mt-2 text-lg font-extrabold text-[#111827]">
+                    {formatPredictionSummary(predictionResult.summary)}
+                  </p>
+                </div>
               </div>
             </section>
           ) : null}
