@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import NavBar from '../components/NavBar.jsx';
@@ -65,6 +65,42 @@ function getParamValue(rawValue, useGridSearch) {
 
 function getKernelParam(kernel, useGridSearch) {
     return useGridSearch ? [kernel] : kernel;
+}
+
+function extractClassificationComponents(payload) {
+    const candidates = [
+        payload,
+        payload?.components,
+        payload?.componentOptions,
+        payload?.data,
+        payload?.results,
+        payload?.items
+    ];
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate)) {
+            return candidate.filter((item) => item != null);
+        }
+
+        if (candidate && typeof candidate === 'object') {
+            return Object.keys(candidate);
+        }
+    }
+
+    return [];
+}
+
+function getDefaultLdaEstimators(nClasses, wavelengthsLength) {
+    const classCount = Number(nClasses);
+    const wavelengthCount = Number(wavelengthsLength);
+
+    if (!Number.isFinite(classCount) || !Number.isFinite(wavelengthCount) || classCount <= 1 || wavelengthCount <= 0) {
+        return '';
+    }
+
+    const lowerBound = Math.min(classCount - 1, wavelengthCount);
+
+    return lowerBound < 10 ? String(lowerBound + 1) : '';
 }
 
 function buildRegressionModelConfig(modelKey, options) {
@@ -235,6 +271,56 @@ export default function ModelSet() {
                 : selectedClassificationModel === 'kmeans'
                     ? Math.max(parseNumberList(kmeansNeighbors).length, 1)
                     : 0;
+    const defaultLdaEstimators = getDefaultLdaEstimators(nClasses, wavelengthsLength);
+
+    useEffect(() => {
+        if (activeTab !== 'classification' || !selectedFileId) {
+            setNClasses('');
+            return undefined;
+        }
+
+        const controller = new AbortController();
+
+        const loadClassificationComponents = async () => {
+            try {
+                const response = await fetch(`/api/preprocessing/components/${selectedFileId}`, {
+                    headers: {
+                        Accept: 'application/json'
+                    },
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`GET /api/preprocessing/components/${selectedFileId} failed with HTTP ${response.status}`);
+                }
+
+                const payload = await response.json().catch(() => null);
+                const components = extractClassificationComponents(payload);
+                const nextNClasses = components.length ? String(components.length) : '';
+
+                setNClasses(nextNClasses);
+            } catch (error) {
+                if (error?.name === 'AbortError') {
+                    return;
+                }
+
+                console.log('[model-set] classification components error', error);
+                setNClasses('');
+            }
+        };
+
+        loadClassificationComponents();
+
+        return () => controller.abort();
+    }, [activeTab, selectedFileId]);
+
+    useEffect(() => {
+        if (!defaultLdaEstimators) {
+            return;
+        }
+
+        setLdaEstimators((currentValue) => currentValue || defaultLdaEstimators);
+    }, [defaultLdaEstimators]);
 
     const selectRegressionModel = (id) => {
         setSelectedRegressionModel(id);
@@ -613,9 +699,10 @@ export default function ModelSet() {
                                                             label="n_estimators:"
                                                             value={ldaEstimators}
                                                             onChange={setLdaEstimators}
-                                                            hint="min(n_classes - 1, wavelengths.length) < n_components <= 10"
+                                                            hint="min(n_classes - 1, wavelengths.length) < n_estimators <= 10"
                                                         />
                                                         <p className="text-[11px] font-medium text-amber-600">
+                                                            n_classes: {nClasses || '-'} / default: {defaultLdaEstimators || '-'} /{' '}
                                                             wavelengths.length: {wavelengthsLength}
                                                         </p>
                                                     </div>
@@ -796,9 +883,10 @@ export default function ModelSet() {
                                                                     value={ldaEstimators}
                                                                     onChange={setLdaEstimators}
                                                                     placeholder=""
-                                                                    hint="min(n_classes-1, wavelengths.length)< n_components<=10,逗號分隔,例如 2,4,6"
+                                                                    hint="min(n_classes-1, wavelengths.length)< n_estimators<=10,逗號分隔,例如 2,4,6"
                                                                 />
                                                                 <p className="text-[11px] font-medium text-amber-600">
+                                                                    n_classes: {nClasses || '-'} / default: {defaultLdaEstimators || '-'} /{' '}
                                                                     wavelengths.length: {wavelengthsLength}
                                                                 </p>
                                                             </>

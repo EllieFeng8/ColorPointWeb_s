@@ -139,6 +139,42 @@ function formatPredictionSummary(summary) {
   return String(summary ?? '--');
 }
 
+function extractModelNameItems(payload) {
+  if (Array.isArray(payload?.model_names)) {
+    return payload.model_names;
+  }
+
+  if (Array.isArray(payload?.models)) {
+    return payload.models;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  return [];
+}
+
+function normalizeModelNames(payload) {
+  return extractModelNameItems(payload)
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item.trim();
+      }
+
+      return String(item?.model_name ?? item?.modelName ?? '').trim();
+    })
+    .filter(Boolean);
+}
+
 export default function Prediction() {
   const location = useLocation();
   const dataInputRef = useRef(null);
@@ -181,9 +217,7 @@ export default function Prediction() {
         }
 
         const result = await response.json();
-        const names = Array.isArray(result?.model_names)
-          ? result.model_names.filter((name) => typeof name === 'string' && name.trim() !== '')
-          : [];
+        const names = normalizeModelNames(result);
 
         if (!isMounted) {
           return;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, Boxes } from 'lucide-react';
+import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, Boxes, FlaskConical } from 'lucide-react';
 import logoAeyeot from '@/src/image/onlyLogoW_big 3.png';
 import { useTraining } from '../context/TrainingContext.jsx';
 
@@ -71,7 +71,7 @@ export default function NavBar() {
               to="/prediction"
               className={navItemClass(isPrediction)}
           >
-              <FileText size={20} />
+              <FlaskConical size={20} />
               <span className="text-sm font-semibold">單一模型預測</span>
           </NavLink>
           <NavLink

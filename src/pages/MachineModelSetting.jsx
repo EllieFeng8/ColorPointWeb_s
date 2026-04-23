@@ -13,16 +13,12 @@ function extractModelNames(payload) {
     return payload.names;
   }
 
-  if (Array.isArray(payload)) {
-    return payload;
+  if (Array.isArray(payload?.models)) {
+    return payload.models;
   }
 
-  return [];
-}
-
-function extractDefaultModelGroups(payload) {
-  if (Array.isArray(payload)) {
-    return payload;
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
   }
 
   if (Array.isArray(payload?.results)) {
@@ -33,7 +29,73 @@ function extractDefaultModelGroups(payload) {
     return payload.data;
   }
 
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
   return [];
+}
+
+function normalizeModelNameOptions(payload) {
+  const rawItems = extractModelNames(payload);
+  const uniqueOptions = new Map();
+
+  rawItems.forEach((item, index) => {
+    if (typeof item === 'string') {
+      const modelName = item.trim();
+
+      if (!modelName) {
+        return;
+      }
+
+      uniqueOptions.set(`name:${modelName}`, {
+        key: `name-${index}-${modelName}`,
+        modelId: '',
+        modelName
+      });
+      return;
+    }
+
+    const modelName = String(item?.model_name ?? item?.modelName ?? item?.name ?? '').trim();
+    const modelId = String(
+      item?.model_id ??
+      item?.modelId ??
+      item?.trained_model_id ??
+      item?.trainedModelId ??
+      item?._id ??
+      ''
+    ).trim();
+
+    if (!modelName) {
+      return;
+    }
+
+    const uniqueKey = modelId ? `id:${modelId}` : `name:${modelName}`;
+
+    if (!uniqueOptions.has(uniqueKey)) {
+      uniqueOptions.set(uniqueKey, {
+        key: modelId || `name-${index}-${modelName}`,
+        modelId,
+        modelName
+      });
+    }
+  });
+
+  return Array.from(uniqueOptions.values());
+}
+
+function extractDefaultModelGroups(payload) {
+  let groups = [];
+
+  if (Array.isArray(payload)) {
+    groups = payload;
+  } else if (Array.isArray(payload?.results)) {
+    groups = payload.results;
+  } else if (Array.isArray(payload?.data)) {
+    groups = payload.data;
+  }
+
+  return groups.filter((group) => group?.is_active === true);
 }
 
 function flattenDefaultModelOptions(payload) {
@@ -43,6 +105,7 @@ function flattenDefaultModelOptions(payload) {
     return models.map((model, index) => ({
       key: `${group?._id ?? group?.name ?? 'group'}-${model?.trained_model_id ?? model?.trainedModelId ?? index}`,
       name: group?.name ?? '',
+      itemName: model?.item_name ?? model?.itemName ?? '',
       description: group?.description ?? '',
       taskCategory: group?.task_category ?? group?.taskCategory ?? '',
       trainedModelId: model?.trained_model_id ?? model?.trainedModelId ?? '',
@@ -57,15 +120,15 @@ function buildCurrentModelList(payload) {
 
   flattenDefaultModelOptions(payload).forEach((item) => {
     const modelName = item.modelName?.trim() || '';
-    const name = item.name?.trim() || '';
+    const itemName = item.itemName?.trim() || '';
     const description = item.description?.trim() || '';
-    const uniqueKey = `${modelName}__${name}__${description}`;
+    const uniqueKey = `${modelName}__${itemName}__${description}`;
 
     if (!uniqueModels.has(uniqueKey)) {
       uniqueModels.set(uniqueKey, {
         key: item.key,
         modelName: modelName || '--',
-        name: name || '--',
+        itemName: itemName || '--',
         description: description || '--'
       });
     }
@@ -74,11 +137,12 @@ function buildCurrentModelList(payload) {
   return Array.from(uniqueModels.values());
 }
 
-function createEditableModel(name = '', modelName = '') {
+function createEditableModel(name = '', modelName = '', modelId = '') {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name,
-    modelName
+    modelName,
+    modelId
   };
 }
 
@@ -116,10 +180,13 @@ export default function MachineModelSetting() {
       }
 
       const payload = await response.json().catch(() => null);
-      const names = extractModelNames(payload)
-        .filter((item) => typeof item === 'string')
-        .map((item) => item.trim())
-        .filter(Boolean);
+      console.log('[MachineModelSetting] model names payload', payload);
+      const names = normalizeModelNameOptions(payload);
+      console.log('[MachineModelSetting] normalized model name options', names);
+      console.log('[MachineModelSetting] model name select disabled state', {
+        isLoadingNames: false,
+        modelNamesLength: names.length
+      });
 
       setModelNames(names);
 
@@ -127,6 +194,7 @@ export default function MachineModelSetting() {
         setNamesError('目前沒有可用的模型名稱。');
       }
     } catch (error) {
+      console.log('[MachineModelSetting] load model names failed', error);
       setModelNames([]);
       setNamesError(error instanceof Error ? `模型名稱讀取失敗：${error.message}` : '模型名稱讀取失敗。');
     } finally {
@@ -151,8 +219,11 @@ export default function MachineModelSetting() {
       }
 
       const payload = await response.json().catch(() => null);
+      console.log('[MachineModelSetting] default models payload', payload);
       const nextOptions = flattenDefaultModelOptions(payload);
       const nextModelList = buildCurrentModelList(payload);
+      console.log('[MachineModelSetting] active default model options', nextOptions);
+      console.log('[MachineModelSetting] current model list', nextModelList);
       const nextModel = nextOptions[0] ?? null;
 
       setDefaultModelOptions(nextOptions);
@@ -163,7 +234,7 @@ export default function MachineModelSetting() {
       setCurrentModelId(nextModel?.trainedModelId ?? '');
       setCurrentPreprocessingId(nextModel?.preprocessingId ?? '');
       setEditableModels([
-        createEditableModel(nextModel?.name ?? '', nextModel?.modelName ?? '')
+        createEditableModel(nextModel?.itemName ?? '', nextModel?.modelName ?? '', nextModel?.trainedModelId ?? '')
       ]);
 
       if (nextOptions.length === 0) {
@@ -212,12 +283,18 @@ export default function MachineModelSetting() {
   };
 
   const handleSaveCurrentModel = async () => {
+    if (!groupName.trim()) {
+      setSubmitError('請填寫 group name。');
+      return;
+    }
+
     const normalizedModels = editableModels
       .map((item) => ({
         name: item.name.trim(),
-        modelName: item.modelName.trim()
+        modelName: item.modelName.trim(),
+        modelId: item.modelId.trim()
       }))
-      .filter((item) => item.name || item.modelName);
+      .filter((item) => item.name || item.modelName || item.modelId);
 
     if (normalizedModels.length === 0) {
       setSubmitError('請至少新增一筆模型設定。');
@@ -234,24 +311,22 @@ export default function MachineModelSetting() {
       return;
     }
 
-    if (!currentPreprocessingId) {
-      setSubmitError('缺少 preprocessing_id，請先完成前處理與訓練流程。');
+    if (normalizedModels.some((item) => !item.modelId)) {
+      setSubmitError('部分 model name 無法對應到 model_id。');
       return;
     }
 
-    const resolvedModelIds = normalizedModels.map((item) => {
-      const matchedModel = defaultModelOptions.find((option) => option.modelName === item.modelName);
-      return matchedModel?.trainedModelId ?? '';
-    });
-
-    if (resolvedModelIds.some((item) => !item)) {
-      setSubmitError('部分 model name 無法對應到 trained_model_id。');
-      return;
-    }
-
-    const dedupedModelIds = [...new Set(resolvedModelIds)];
-    const mergedName = normalizedModels.map((item) => item.name).join(' / ');
     const mergedModelNames = normalizedModels.map((item) => item.modelName).join(' / ');
+    const requestBody = {
+      name: groupName.trim(),
+      description: description.trim() || `${mergedModelNames} 預設模型群組`,
+      model_set: normalizedModels.map((item) => ({
+        model_id: item.modelId,
+        item_name: item.name
+      }))
+    };
+
+    console.log('[MachineModelSetting] save current model payload', requestBody);
 
     setIsSavingCurrentModel(true);
     setSubmitError('');
@@ -263,13 +338,7 @@ export default function MachineModelSetting() {
           'Content-Type': 'application/json',
           Accept: 'application/json'
         },
-        body: JSON.stringify({
-          name: mergedName,
-          description: description.trim() || `${mergedModelNames} 預設模型群組`,
-          task_category: taskCategory,
-          model_ids: dedupedModelIds,
-          preprocessing_id: currentPreprocessingId
-        })
+        body: JSON.stringify(requestBody)
       });
 
       const contentType = response.headers.get('content-type') || '';
@@ -284,11 +353,11 @@ export default function MachineModelSetting() {
         throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
       }
 
+      console.log('[MachineModelSetting] save current model response', body);
+
       await swal(
         '已儲存目前模型',
-        typeof body === 'string'
-          ? body
-          : JSON.stringify(body, null, 2),
+        '預設模型群組已更新。',
         'success'
       );
       loadCurrentModels();
@@ -397,7 +466,7 @@ export default function MachineModelSetting() {
                       <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-5">
                         <ReadonlyField label="model_name" value={item.modelName} />
                         <div className="mt-4">
-                          <ReadonlyField label="name" value={item.name} />
+                          <ReadonlyField label="item_name" value={item.itemName} />
                         </div>
                         <div className="mt-4">
                           <ReadonlyField label="description" value={item.description} />
@@ -421,6 +490,16 @@ export default function MachineModelSetting() {
               </div>
 
               <div className="mt-6 space-y-5">
+                <Field label="group name">
+                  <input
+                    type="text"
+                    value={groupName}
+                    onChange={(event) => setGroupName(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20"
+                    placeholder="例如：water"
+                  />
+                </Field>
+
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-sm font-semibold text-slate-700">
                     可新增多筆模型，分別修改 `name` 與 `model name`。
@@ -457,30 +536,36 @@ export default function MachineModelSetting() {
                       </div>
 
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <Field label="name">
+                        <Field label="item_name">
                           <input
                             type="text"
                             value={item.name}
                             onChange={(event) => handleEditableModelChange(item.id, 'name', event.target.value)}
                             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20"
-                            placeholder="例如：生產線A預設"
+                            placeholder="例如：water"
                           />
                         </Field>
 
                         <Field label="model name">
                           <div className="relative">
                             <select
-                              value={item.modelName}
-                              onChange={(event) => handleEditableModelChange(item.id, 'modelName', event.target.value)}
-                              disabled={isLoadingCurrentModel || isLoadingNames || modelNames.length === 0}
+                              value={item.modelId || item.modelName}
+                              onChange={(event) => {
+                                const selectedOption = modelNames.find((option) => (
+                                  (option.modelId || option.modelName) === event.target.value
+                                ));
+                                handleEditableModelChange(item.id, 'modelName', selectedOption?.modelName ?? '');
+                                handleEditableModelChange(item.id, 'modelId', selectedOption?.modelId ?? '');
+                              }}
+                              disabled={isLoadingNames || modelNames.length === 0}
                               className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm font-medium text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
                             >
                               <option value="">
                                 {isLoadingNames ? '讀取中...' : '請選擇模型名稱'}
                               </option>
-                              {modelNames.map((modelName) => (
-                                <option key={modelName} value={modelName}>
-                                  {modelName}
+                              {modelNames.map((modelOption) => (
+                                <option key={modelOption.key} value={modelOption.modelId || modelOption.modelName}>
+                                  {modelOption.modelName}
                                 </option>
                               ))}
                             </select>
@@ -497,10 +582,14 @@ export default function MachineModelSetting() {
                   <p className="text-sm font-semibold text-red-600">{submitError}</p>
                 ) : null}
 
+                {namesError ? (
+                  <p className="text-sm font-semibold text-red-600">{namesError}</p>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={handleSaveCurrentModel}
-                  disabled={isSavingCurrentModel || defaultModelOptions.length === 0}
+                  disabled={isSavingCurrentModel || isLoadingNames || modelNames.length === 0}
                   className="inline-flex items-center gap-2 rounded-2xl bg-[#82b091] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#82b091]/25 transition-all hover:bg-[#659475] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
                 >
                   <Save className="h-4 w-4" />

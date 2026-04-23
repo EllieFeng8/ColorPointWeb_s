@@ -781,7 +781,7 @@ export default function Home() {
                           <td className="px-8 py-5 text-sm font-medium text-slate-600">{file.uploadTime}</td>
                           <td className="px-8 py-5">
                             <span
-                              className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                              className={`inline-flex items-center whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold border ${
                                 file.status === 'uploaded'
                                   ? 'bg-[#82b091]/10 text-[#659475] border-[#82b091]/10'
                                   : file.status === 'error'
