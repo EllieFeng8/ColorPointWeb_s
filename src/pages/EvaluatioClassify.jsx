@@ -231,7 +231,6 @@ const REGRESSION_METRICS = [
 const CLASSIFICATION_METRICS = [
   { key: 'accuracy', label: 'Accuracy' },
   { key: 'auc', label: 'AUC' },
-  { key: 'roc_auc', label: 'ROC AUC' },
   { key: 'precision_score', label: 'Precision Score' },
   { key: 'precision', label: 'Precision' },
   { key: 'recall', label: 'Recall' },

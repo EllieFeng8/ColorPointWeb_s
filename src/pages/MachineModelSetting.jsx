@@ -464,12 +464,12 @@ export default function MachineModelSetting() {
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {currentModelList.map((item) => (
                       <div key={item.key} className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <ReadonlyField label="model_name" value={item.modelName} />
+                        <ReadonlyField label="MODEL NAME" value={item.modelName} />
                         <div className="mt-4">
-                          <ReadonlyField label="item_name" value={item.itemName} />
+                          <ReadonlyField label="ITEM NAME" value={item.itemName} />
                         </div>
                         <div className="mt-4">
-                          <ReadonlyField label="description" value={item.description} />
+                          <ReadonlyField label="DESCRIPTION" value={item.description} />
                         </div>
                       </div>
                     ))}
@@ -490,7 +490,7 @@ export default function MachineModelSetting() {
               </div>
 
               <div className="mt-6 space-y-5">
-                <Field label="group name">
+                <Field label="GROUP NAME">
                   <input
                     type="text"
                     value={groupName}
@@ -536,7 +536,7 @@ export default function MachineModelSetting() {
                       </div>
 
                       <div className="mt-4 grid gap-4 md:grid-cols-2">
-                        <Field label="item_name">
+                        <Field label="ITEM NAME">
                           <input
                             type="text"
                             value={item.name}
@@ -546,7 +546,7 @@ export default function MachineModelSetting() {
                           />
                         </Field>
 
-                        <Field label="model name">
+                        <Field label="MODEL NAME">
                           <div className="relative">
                             <select
                               value={item.modelId || item.modelName}

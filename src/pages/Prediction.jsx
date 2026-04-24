@@ -501,7 +501,7 @@ export default function Prediction() {
                 htmlFor="prediction-sample-select"
                 className="mb-2 block text-sm font-semibold text-slate-700"
               >
-                選擇 sample label
+                選擇 SAMPLE LABEL
               </label>
 
               <div className="relative">
@@ -566,7 +566,7 @@ export default function Prediction() {
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Sample Label
+                    SAMPLE LABEL
                   </p>
                   <p className="mt-2 text-sm font-bold text-[#111827]">
                     {predictionResult.sampleLabel}

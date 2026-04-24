@@ -158,6 +158,10 @@ export default function Preprocessing() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const rawWavelengthCount = spectralDatasets.raw.wavelengths.length;
+  const maxSgWindowSize = rawWavelengthCount > 0
+    ? (rawWavelengthCount % 2 === 1 ? rawWavelengthCount : rawWavelengthCount - 1)
+    : 1;
 
   useEffect(() => {
     if (routedFileId) {
@@ -361,6 +365,11 @@ export default function Preprocessing() {
         setSubmitError('VIP 需要填寫有效的 vip_threshold。');
         return;
       }
+
+      if (threshold > 10) {
+        setSubmitError('VIP 的 vip_threshold 需小於等於 10。');
+        return;
+      }
     }
 
     if (wavelengthMethod === 'RF_Feature_Importance') {
@@ -373,6 +382,70 @@ export default function Preprocessing() {
 
       if (topN < 1 || topN > 20) {
         setSubmitError('RF Feature Importance 的 top_n 只能介於 1 到 20。');
+        return;
+      }
+    }
+
+    if (sg) {
+      const windowSize = Number(sgWindowSize);
+      const polynomialOrder = Number(sgPolynomialOrder);
+
+      if (!sgWindowSize || Number.isNaN(windowSize) || !Number.isInteger(windowSize)) {
+        setSubmitError('SG 平滑處理的 Window size 需要填寫有效的整數。');
+        return;
+      }
+
+      if (windowSize < 1 || windowSize > maxSgWindowSize || windowSize % 2 === 0) {
+        setSubmitError(`SG 平滑處理的 Window size 需介於 1 到 ${maxSgWindowSize}，且必須為奇數。`);
+        return;
+      }
+
+      if (!sgPolynomialOrder || Number.isNaN(polynomialOrder) || !Number.isInteger(polynomialOrder)) {
+        setSubmitError('SG 平滑處理的次方需要填寫有效的整數。');
+        return;
+      }
+
+      if (polynomialOrder < 0 || polynomialOrder > 21 || polynomialOrder >= windowSize) {
+        setSubmitError('SG 平滑處理的次方需小於等於 21，且必須小於 Window size。');
+        return;
+      }
+    }
+
+    if (derivative) {
+      const order = Number(derivativeOrder);
+
+      if (!derivativeOrder || Number.isNaN(order) || !Number.isInteger(order)) {
+        setSubmitError('微分處理的次方需要填寫有效的整數。');
+        return;
+      }
+
+      if (order < 0 || order > 21) {
+        setSubmitError('微分處理的次方需小於等於 21。');
+        return;
+      }
+    }
+
+    if (wavelengthMethod === 'CARS') {
+      const nIters = Number(carsIterations);
+      const kFold = Number(carsKFold);
+
+      if (!carsIterations || Number.isNaN(nIters) || !Number.isInteger(nIters)) {
+        setSubmitError('CARS 的 n_iters 需要填寫有效的整數。');
+        return;
+      }
+
+      if (nIters < 1 || nIters > maxSgWindowSize || nIters % 2 === 0) {
+        setSubmitError(`CARS 的 n_iters 需介於 1 到 ${maxSgWindowSize}，且必須為奇數。`);
+        return;
+      }
+
+      if (!carsKFold || Number.isNaN(kFold) || !Number.isInteger(kFold)) {
+        setSubmitError('CARS 的 k_fold 需要填寫有效的整數。');
+        return;
+      }
+
+      if (kFold < 0 || kFold > 21) {
+        setSubmitError('CARS 的 k_fold 需小於等於 21。');
         return;
       }
     }
@@ -713,13 +786,16 @@ export default function Preprocessing() {
                             <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Window size</label>
-                                <span className="text-[10px] font-medium text-amber-500">1&lt;window size&lt;=21</span>
+                                <span className="text-[10px] font-medium text-amber-500">{`1≤window size≤${maxSgWindowSize} (奇數)`}</span>
                               </div>
                               <input
                                 value={sgWindowSize}
                                 onChange={(event) => setSgWindowSize(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="2"
+                                min="1"
+                                max={String(maxSgWindowSize)}
+                                step="2"
                                 type="number"
                               />
                             </div>
@@ -727,13 +803,16 @@ export default function Preprocessing() {
                             <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
-                                <span className="text-[10px] font-medium text-amber-500">0&lt;次方&lt;=5</span>
+                                <span className="text-[10px] font-medium text-amber-500">次方 &lt;= 21 且 次方 &lt; Window size</span>
                               </div>
                               <input
                                 value={sgPolynomialOrder}
                                 onChange={(event) => setSgPolynomialOrder(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="2"
+                                min="0"
+                                max="21"
+                                step="1"
                                 type="number"
                               />
                             </div>
@@ -749,12 +828,18 @@ export default function Preprocessing() {
                         {derivative && (
                           <div className="pl-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">次方</label>
+                                <span className="text-[10px] font-medium text-amber-500">次方 &lt;= 21</span>
+                              </div>
                               <input
                                 value={derivativeOrder}
                                 onChange={(event) => setDerivativeOrder(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="1"
+                                min="0"
+                                max="21"
+                                step="1"
                                 type="number"
                               />
                             </div>
@@ -821,22 +906,34 @@ export default function Preprocessing() {
                         {wavelengthMethod === 'CARS' && (
                           <div className="grid grid-cols-2 gap-3 pl-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">n_iters</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">n_iters</label>
+                                <span className="text-[10px] font-medium text-amber-500">{`1≤n_iters≤≤${maxSgWindowSize} (奇數)`}</span>
+                              </div>
                               <input
                                 value={carsIterations}
                                 onChange={(event) => setCarsIterations(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="10"
+                                min="1"
+                                max={String(maxSgWindowSize)}
+                                step="2"
                                 type="number"
                               />
                             </div>
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">k_fold</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">k_fold</label>
+                                <span className="text-[10px] font-medium text-amber-500">k_fold &lt;= 21</span>
+                              </div>
                               <input
                                 value={carsKFold}
                                 onChange={(event) => setCarsKFold(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="3"
+                                min="0"
+                                max="21"
+                                step="1"
                                 type="number"
                               />
                             </div>
@@ -845,13 +942,17 @@ export default function Preprocessing() {
                         {wavelengthMethod === 'VIP' && (
                           <div className="pl-2">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">vip_threshold</label>
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">vip_threshold</label>
+                                <span className="text-[10px] font-medium text-amber-500">vip_threshold &lt;= 10</span>
+                              </div>
                               <input
                                 value={vipThreshold}
                                 onChange={(event) => setVipThreshold(event.target.value)}
                                 className="w-full bg-slate-50 border-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary/20 outline-none"
                                 placeholder="1.2"
                                 type="number"
+                                max="10"
                                 step="any"
                               />
                             </div>
@@ -910,6 +1011,9 @@ export default function Preprocessing() {
                   </div>
 
                 </div>
+                {submitError && (
+                    <p className="text-sm font-semibold text-red-600">{submitError}</p>
+                )}
                 <div className="flex gap-4">
                   {/*<button*/}
                   {/*  type="button"*/}
@@ -918,6 +1022,7 @@ export default function Preprocessing() {
                   {/*>*/}
                   {/*  <RotateCcw size={18} /> 重置*/}
                   {/*</button>*/}
+
                   <button
                     type="button"
                     onClick={handleApplySettings}
@@ -927,9 +1032,7 @@ export default function Preprocessing() {
                     <Zap size={18} /> {isSubmitting ? '套用中...' : '套用設置'}
                   </button>
                 </div>
-                {submitError && (
-                  <p className="text-sm font-semibold text-red-600">{submitError}</p>
-                )}
+
               </div>
 
               {/* Right Column Visualization */}

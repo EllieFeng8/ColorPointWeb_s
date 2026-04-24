@@ -58,6 +58,51 @@ function parseNumberList(value) {
         .filter((item) => !Number.isNaN(item));
 }
 
+function parseRawNumberList(value) {
+    return String(value ?? '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+function validateNumberInput(rawValue, label, options = {}) {
+    const {
+        allowList = false,
+        integerOnly = false,
+        min,
+        max,
+        minExclusive = false,
+        maxExclusive = false
+    } = options;
+    const rawItems = allowList ? parseRawNumberList(rawValue) : [String(rawValue ?? '').trim()];
+
+    if (rawItems.length === 0 || rawItems.some((item) => item === '')) {
+        return `${label} 需要填寫有效的數值。`;
+    }
+
+    for (const item of rawItems) {
+        const numericValue = Number(item);
+
+        if (Number.isNaN(numericValue)) {
+            return `${label} 需要填寫有效的數值。`;
+        }
+
+        if (integerOnly && !Number.isInteger(numericValue)) {
+            return `${label} 需要填寫有效的整數。`;
+        }
+
+        if (min != null && (minExclusive ? numericValue <= min : numericValue < min)) {
+            return `${label} 超過限制條件，請依備註範圍輸入。`;
+        }
+
+        if (max != null && (maxExclusive ? numericValue >= max : numericValue > max)) {
+            return `${label} 超過限制條件，請依備註範圍輸入。`;
+        }
+    }
+
+    return '';
+}
+
 function getParamValue(rawValue, useGridSearch) {
     const values = parseNumberList(rawValue);
     return useGridSearch ? values : (values[0] ?? Number(rawValue));
@@ -350,6 +395,129 @@ export default function ModelSet() {
             return;
         }
 
+        setSubmitError('');
+
+        const ldaLowerBound = Math.min(
+            Math.max(Number(nClasses) - 1, 0),
+            Math.max(wavelengthsLength, 0)
+        );
+        const validateModelParams = () => {
+            const allowList = isGridSearch;
+
+            if (!Number.isInteger(Number(kFoldValue)) || Number(kFoldValue) < 1 || Number(kFoldValue) > 21) {
+                return 'K-fold Validation 超過限制條件，請輸入 1 到 21 的整數。';
+            }
+
+            if (activeTab === 'regression') {
+                if (selectedRegressionModel === 'pls') {
+                    return validateNumberInput(plsComponents, 'PLS Components', {
+                        allowList,
+                        integerOnly: true,
+                        min: 1,
+                        max: 50,
+                        minExclusive: true,
+                        maxExclusive: true
+                    });
+                }
+
+                if (selectedRegressionModel === 'svr' && svrKernel === 'rbf') {
+                    return (
+                        validateNumberInput(svrC, 'SVR C', {
+                            allowList,
+                            min: 1,
+                            max: 100,
+                            minExclusive: false,
+                            maxExclusive: true
+                        }) ||
+                        validateNumberInput(svrTol, 'SVR tol', {
+                            allowList,
+                            min: 1e-5,
+                            max: 1e-1,
+                            minExclusive: true,
+                            maxExclusive: true
+                        })
+                    );
+                }
+
+                if (selectedRegressionModel === 'rf') {
+                    return validateNumberInput(rfEstimators, 'RF n_estimators', {
+                        allowList,
+                        integerOnly: true,
+                        min: 10,
+                        max: 200
+                    });
+                }
+
+                if (selectedRegressionModel === 'xgboost') {
+                    return (
+                        validateNumberInput(xgboostEstimators, 'XGBoost n_estimators', {
+                            allowList,
+                            integerOnly: true,
+                            min: 10,
+                            max: 200
+                        }) ||
+                        validateNumberInput(xgboostMaxDepth, 'XGBoost max_depth', {
+                            allowList,
+                            integerOnly: true,
+                            min: 1,
+                            max: 12
+                        })
+                    );
+                }
+            }
+
+            if (activeTab === 'classification') {
+                if (selectedClassificationModel === 'svm' && svmKernel === 'rbf') {
+                    return (
+                        validateNumberInput(svmC, 'SVM C', {
+                            allowList,
+                            min: 1,
+                            max: 100,
+                            minExclusive: false,
+                            maxExclusive: true
+                        }) ||
+                        validateNumberInput(svmTol, 'SVM tol', {
+                            allowList,
+                            min: 1e-5,
+                            max: 1e-1,
+                            minExclusive: true,
+                            maxExclusive: true
+                        })
+                    );
+                }
+
+                if (selectedClassificationModel === 'lda') {
+                    if (!Number.isFinite(ldaLowerBound) || ldaLowerBound <= 0) {
+                        return 'LDA 參數限制無法計算，請先確認 n_classes 與 wavelengths。';
+                    }
+
+                    return validateNumberInput(ldaEstimators, 'LDA n_estimators', {
+                        allowList,
+                        integerOnly: true,
+                        min: ldaLowerBound,
+                        max: 10,
+                        minExclusive: true
+                    });
+                }
+
+                if (selectedClassificationModel === 'kmeans') {
+                    return validateNumberInput(kmeansNeighbors, 'K-means n_neighbors', {
+                        allowList,
+                        integerOnly: true,
+                        min: 2,
+                        max: 10
+                    });
+                }
+            }
+
+            return '';
+        };
+        const validationError = validateModelParams();
+        if (validationError) {
+            setSubmitError(validationError);
+            return;
+        }
+
 
         const selectedRegressionModelKey = {
             pls: 'PLS',
@@ -572,7 +740,7 @@ export default function ModelSet() {
                                                                 label="C:"
                                                                 value={svrC}
                                                                 onChange={setSvrC}
-                                                                hint="1.0 < C < 100"
+                                                                hint="1.0 ≤ C < 100"
                                                             />
                                                             <InputGroup
                                                                 label="tol:"
@@ -598,7 +766,7 @@ export default function ModelSet() {
                                                     label="n_estimators:"
                                                     value={rfEstimators}
                                                     onChange={setRfEstimators}
-                                                    hint="10 <= n_estimators <= 200"
+                                                    hint="10 ≤ n_estimators ≤ 200"
                                                 />
                                             )}
                                         </ModelCard>
@@ -616,13 +784,13 @@ export default function ModelSet() {
                                                         label="n_estimators:"
                                                         value={xgboostEstimators}
                                                         onChange={setXgboostEstimators}
-                                                        hint="10 <= n_estimators <= 200"
+                                                        hint="10 ≤ n_estimators ≤ 200"
                                                     />
                                                     <InputGroup
                                                         label="max_depth:"
                                                         value={xgboostMaxDepth}
                                                         onChange={setXgboostMaxDepth}
-                                                        hint="1 <= max_depth <= 12"
+                                                        hint="1 ≤ max_depth ≤ 12"
                                                     />
                                                 </div>
                                             )}
@@ -672,7 +840,7 @@ export default function ModelSet() {
                                                                     label="C:"
                                                                     value={svmC}
                                                                     onChange={setSvmC}
-                                                                    hint="1.0 < C < 100"
+                                                                    hint="1.0 ≤ C < 100"
                                                                 />
                                                                 <InputGroup
                                                                     label="tol:"
@@ -699,7 +867,7 @@ export default function ModelSet() {
                                                             label="n_estimators:"
                                                             value={ldaEstimators}
                                                             onChange={setLdaEstimators}
-                                                            hint="min(n_classes - 1, wavelengths.length) < n_estimators <= 10"
+                                                            hint="min(n_classes - 1, wavelengths.length) < n_estimators ≤ 10"
                                                         />
                                                         <p className="text-[11px] font-medium text-amber-600">
                                                             n_classes: {nClasses || '-'} / default: {defaultLdaEstimators || '-'} /{' '}
@@ -721,7 +889,7 @@ export default function ModelSet() {
                                                         label="n_neighbors:"
                                                         value={kmeansNeighbors}
                                                         onChange={setKmeansNeighbors}
-                                                        hint="2 <= n_neighbors <= 10"
+                                                        hint="2 ≤ n_neighbors ≤ 10"
                                                     />
                                                 )}
                                             </ModelCard>
@@ -792,7 +960,7 @@ export default function ModelSet() {
                                                                             value={svrC}
                                                                             onChange={setSvrC}
                                                                             placeholder=""
-                                                                            hint="1.0<C<100 逗號分隔，例如 1,2,3"
+                                                                            hint="1.0≤C<100 逗號分隔，例如 1,2,3"
                                                                         />
                                                                         <InputGroup
                                                                             label="tol:"
@@ -810,7 +978,7 @@ export default function ModelSet() {
                                                                 label="n_estimators:"
                                                                 value={rfEstimators}
                                                                 onChange={setRfEstimators}
-                                                                hint="10<=n_estimators<=200,逗號分隔,例如 5,10,15"
+                                                                hint="10≤n_estimators≤200,逗號分隔,例如 5,10,15"
                                                             />
                                                         )}
                                                         {selectedRegressionModel === 'xgboost' && (
@@ -819,13 +987,13 @@ export default function ModelSet() {
                                                                     label="n_estimators:"
                                                                     value={xgboostEstimators}
                                                                     onChange={setXgboostEstimators}
-                                                                    hint="10<=n_estimators<=200,逗號分隔,例如 5,10,15"
+                                                                    hint="10≤n_estimators≤200,逗號分隔,例如 5,10,15"
                                                                 />
                                                                 <InputGroup
                                                                     label="max_depth:"
                                                                     value={xgboostMaxDepth}
                                                                     onChange={setXgboostMaxDepth}
-                                                                    hint="1<= max_depth<=12,逗號分隔,例如 3,6,9"
+                                                                    hint="1≤ max_depth≤12,逗號分隔,例如 3,6,9"
                                                                 />
                                                             </div>
                                                         )}
@@ -863,7 +1031,7 @@ export default function ModelSet() {
                                                                             value={svmC}
                                                                             onChange={setSvmC}
                                                                             placeholder=""
-                                                                            hint="1.0<C<100 逗號分隔，例如 1,2,3"
+                                                                            hint="1.0≤C<100 逗號分隔，例如 1,2,3"
                                                                         />
                                                                         <InputGroup
                                                                             label="tol:"
@@ -883,7 +1051,7 @@ export default function ModelSet() {
                                                                     value={ldaEstimators}
                                                                     onChange={setLdaEstimators}
                                                                     placeholder=""
-                                                                    hint="min(n_classes-1, wavelengths.length)< n_estimators<=10,逗號分隔,例如 2,4,6"
+                                                                    hint="min(n_classes-1, wavelengths.length)< n_estimators≤10,逗號分隔,例如 2,4,6"
                                                                 />
                                                                 <p className="text-[11px] font-medium text-amber-600">
                                                                     n_classes: {nClasses || '-'} / default: {defaultLdaEstimators || '-'} /{' '}
@@ -897,7 +1065,7 @@ export default function ModelSet() {
                                                                 value={kmeansNeighbors}
                                                                 onChange={setKmeansNeighbors}
                                                                 placeholder=""
-                                                                hint="2<=n_neighbors<=10,逗號分隔,例如 3,5,7"
+                                                                hint="2≤n_neighbors≤10,逗號分隔,例如 3,5,7"
                                                             />
                                                         )}
                                                     </div>
@@ -924,7 +1092,7 @@ export default function ModelSet() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4 flex-1 max-w-[200px] ml-auto">
-                                        <span className="text-[10px] font-medium text-amber-500 whitespace-nowrap">1 &lt;= k-fold &lt;= 10</span>
+                                        <span className="text-[10px] font-medium text-amber-500 whitespace-nowrap">1 &lt;= k-fold &lt;= 21</span>
                                         <input
                                             className="w-full min-w-[90px] bg-slate-50 border border-slate-200 rounded-lg text-right text-sm py-2.5 px-4 focus:ring-1 focus:ring-[#659475] outline-none"
                                             type="text"
