@@ -791,7 +791,6 @@ const ScatterPanel = ({
 
 const ModelSavePanel = ({
   activeModelId,
-  preprocessingId,
   fileName,
   setFileName,
   version,
@@ -812,10 +811,7 @@ const ModelSavePanel = ({
       <h3 className="font-bold text-slate-800">模型儲存</h3>
 
       {!activeModelId ? (
-        <p className="mt-2 text-xs font-medium text-red-600">缺少 best_model_id，暫時無法儲存模型。</p>
-      ) : null}
-      {!preprocessingId ? (
-        <p className="mt-2 text-xs font-medium text-red-600">缺少 preprocessing_id，暫時無法儲存模型。</p>
+        <p className="mt-2 text-xs font-medium text-red-600">缺少 model_id，暫時無法更新模型資訊。</p>
       ) : null}
       {modelExportError ? (
         <p className="mt-2 text-xs font-medium text-red-600">{modelExportError}</p>
@@ -861,10 +857,10 @@ const ModelSavePanel = ({
 
       <button
         type="submit"
-        disabled={isModelExporting || !activeModelId || !preprocessingId}
+        disabled={isModelExporting || !activeModelId}
         className={cn(
           'mt-4 flex w-full items-center justify-center gap-2 rounded-lg py-3 font-bold text-white shadow-sm transition-all active:scale-[0.98]',
-          isModelExporting || !activeModelId || !preprocessingId
+          isModelExporting || !activeModelId
             ? 'cursor-not-allowed bg-slate-300'
             : 'bg-primary hover:bg-primary-hover'
         )}
@@ -1220,13 +1216,7 @@ export default function EvaluatioClassify() {
 
   const handleModelExport = async () => {
     if (!activeModelId) {
-      setModelExportError('缺少 best_model_id，無法儲存模型。');
-      setModelExportSuccess('');
-      return;
-    }
-
-    if (!preprocessingId) {
-      setModelExportError('缺少 preprocessing_id，無法儲存模型。');
+      setModelExportError('缺少 model_id，無法更新模型資訊。');
       setModelExportSuccess('');
       return;
     }
@@ -1243,16 +1233,13 @@ export default function EvaluatioClassify() {
 
     try {
       const payload = {
-        name: fileName.trim(),
-        description: version.trim(),
-        task_category: taskCategory || 'regression',
-        model_ids: [activeModelId],
-        preprocessing_id: preprocessingId
+        model_name: fileName.trim(),
+        note: version.trim()
       };
-      console.log('[EvaluatioClassify] Saving default model payload:', payload);
+      console.log('[EvaluatioClassify] Updating model note payload:', payload);
 
-      const response = await fetch('/api/default-models/', {
-        method: 'POST',
+      const response = await fetch(`/api/modeling/models/${encodeURIComponent(activeModelId)}/note`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json'
@@ -1263,7 +1250,7 @@ export default function EvaluatioClassify() {
       const contentType = response.headers.get('content-type') || '';
       const rawText = await response.text().catch(() => '');
       const body = parseResponseBody(rawText, contentType);
-      console.log('[EvaluatioClassify] Save default model response:', {
+      console.log('[EvaluatioClassify] Update model note response:', {
         status: response.status,
         ok: response.ok,
         body
@@ -1275,12 +1262,12 @@ export default function EvaluatioClassify() {
       }
       const successMessage = typeof body === 'string'
         ? body
-        : body?.message || body?.detail || '模型已儲存。';
+        : body?.message || body?.detail || '模型資訊已更新。';
       setModelExportSuccess(successMessage);
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        console.log('[EvaluatioClassify] Save default model failed:', error);
-        setModelExportError(error instanceof Error ? error.message : '儲存模型失敗');
+        console.log('[EvaluatioClassify] Update model note failed:', error);
+        setModelExportError(error instanceof Error ? error.message : '更新模型資訊失敗');
         setModelExportSuccess('');
       }
     } finally {
@@ -1360,7 +1347,6 @@ export default function EvaluatioClassify() {
 
             <ModelSavePanel
                 activeModelId={activeModelId}
-                preprocessingId={preprocessingId}
                 fileName={fileName}
                 setFileName={setFileName}
                 version={version}
