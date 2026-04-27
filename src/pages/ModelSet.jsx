@@ -278,6 +278,7 @@ export default function ModelSet() {
         trainingJobId,
         progress,
         statusText,
+        modelInfo,
         completionState,
         error: trainingError,
         hasActiveTraining,
@@ -637,6 +638,7 @@ export default function ModelSet() {
                             trainingJobId={trainingJobId}
                             progress={progress}
                             statusText={trainingError || statusText}
+                            modelInfo={modelInfo}
                             completionState={completionState}
                             onClose={() => setShowLoading(false)}
                             secondaryLabel="返回模型建構"

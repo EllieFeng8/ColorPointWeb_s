@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { AlertCircle, ArrowRight, Settings } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 
-const POLL_INTERVAL_MS = 3000;
-
 function formatModels(models) {
+  if (typeof models === 'string') {
+    return models || '--';
+  }
+
   if (!models || typeof models !== 'object') {
     return '--';
   }
@@ -19,20 +21,12 @@ function formatModels(models) {
 
 function normalizeTrainingDetail(detail) {
   return {
-    taskCategory: detail?.task_category ?? '--',
+    taskCategory: detail?.taskCategory ?? detail?.task_category ?? '--',
     models: formatModels(detail?.models),
     status: detail?.status ?? '--',
-    bestModelId: detail?.best_model_id ?? detail?.bestModelId ?? '',
-    errorMessage: detail?.status === 'error' ? (detail?.error_message ?? '') : '',
+    bestModelId: detail?.bestModelId ?? detail?.best_model_id ?? '',
+    errorMessage: detail?.errorMessage ?? (detail?.status === 'error' ? (detail?.error_message ?? '') : ''),
   };
-}
-
-function getResponseMessage(body, fallback) {
-  if (typeof body === 'string') {
-    return body || fallback;
-  }
-
-  return body?.detail || body?.message || fallback;
 }
 
 const secondaryActionClassName =
@@ -44,64 +38,12 @@ export default function Loading({
   trainingJobId,
   progress = 45,
   statusText = '正在建立訓練任務...',
+  modelInfo = null,
   completionState = null,
   secondaryLabel,
   secondaryTo,
 }) {
-  const [trainingDetail, setTrainingDetail] = useState(null);
-  const [detailError, setDetailError] = useState('');
-
-  useEffect(() => {
-    if (!open || !trainingJobId) {
-      setTrainingDetail(null);
-      setDetailError('');
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const fetchTrainingDetail = async () => {
-      try {
-        const response = await fetch(`/api/modeling/${encodeURIComponent(trainingJobId)}`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json'
-          }
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-        const body = contentType.includes('application/json')
-          ? await response.json().catch(() => null)
-          : await response.text().catch(() => '');
-
-        if (cancelled) {
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${getResponseMessage(body, '取得訓練任務詳情失敗')}`);
-        }
-
-        setTrainingDetail(body);
-        setDetailError('');
-      } catch (error) {
-        if (!cancelled) {
-          setTrainingDetail(null);
-          setDetailError(error instanceof Error ? error.message : '取得訓練任務詳情失敗');
-        }
-      }
-    };
-
-    fetchTrainingDetail();
-    const pollTimer = window.setInterval(fetchTrainingDetail, POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(pollTimer);
-    };
-  }, [open, trainingJobId]);
-
-  const detail = useMemo(() => normalizeTrainingDetail(trainingDetail), [trainingDetail]);
+  const detail = useMemo(() => normalizeTrainingDetail(modelInfo), [modelInfo]);
   const canGoToEvaluation = detail.status === 'completed';
 
   return (
@@ -138,9 +80,6 @@ export default function Loading({
               <p className="text-sm text-gray-500">{statusText}</p>
               {trainingJobId ? (
                 <p className="text-xs font-semibold text-slate-400">training_job_id: {trainingJobId}</p>
-              ) : null}
-              {detailError ? (
-                <p className="text-xs font-medium text-red-600">{detailError}</p>
               ) : null}
             </div>
 
