@@ -196,6 +196,7 @@ export default function Prediction() {
   const [parsedCsv, setParsedCsv] = useState(null);
   const [selectedSampleLabel, setSelectedSampleLabel] = useState('');
   const [predictionResult, setPredictionResult] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -205,11 +206,16 @@ export default function Prediction() {
       setModelsError('');
 
       try {
+        console.log('[Prediction] Request: GET /api/modeling/models/names/all');
         const response = await fetch('/api/modeling/models/names/all', {
           method: 'GET',
           headers: {
             Accept: 'application/json'
           }
+        });
+        console.log('[Prediction] Response: GET /api/modeling/models/names/all', {
+          ok: response.ok,
+          status: response.status
         });
 
         if (!response.ok) {
@@ -217,6 +223,7 @@ export default function Prediction() {
         }
 
         const result = await response.json();
+        console.log('[Prediction] Payload: GET /api/modeling/models/names/all', result);
         const names = normalizeModelNames(result);
 
         if (!isMounted) {
@@ -230,6 +237,7 @@ export default function Prediction() {
           setModelsError('目前沒有可選擇的模型。');
         }
       } catch (error) {
+        console.log('[Prediction] Error: GET /api/modeling/models/names/all', error);
         if (!isMounted) {
           return;
         }
@@ -265,8 +273,7 @@ export default function Prediction() {
     dataInputRef.current?.click();
   };
 
-  const handleFileChange = async (event) => {
-    const file = event.target.files?.[0];
+  const processSelectedFile = async (file) => {
     if (!file) {
       return;
     }
@@ -289,8 +296,40 @@ export default function Prediction() {
         'error'
       );
     }
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    await processSelectedFile(file);
 
     event.target.value = '';
+  };
+
+  const handleDragEnter = (event) => {
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event) => {
+    event.preventDefault();
+    if (event.currentTarget.contains(event.relatedTarget)) {
+      return;
+    }
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+
+    const file = event.dataTransfer.files?.[0];
+    await processSelectedFile(file);
   };
 
   const handleRunPrediction = async () => {
@@ -316,23 +355,30 @@ export default function Prediction() {
     }
 
     try {
+      const requestPayload = {
+        model_name: selectedModelName,
+        white: parsedCsv.whiteSpectrum,
+        sample: sampleSpectrum
+      };
+      console.log('[Prediction] Request: POST /api/modeling/predict', requestPayload);
       const response = await fetch('/api/modeling/predict', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json'
         },
-        body: JSON.stringify({
-          model_name: selectedModelName,
-          white: parsedCsv.whiteSpectrum,
-          sample: sampleSpectrum
-        })
+        body: JSON.stringify(requestPayload)
+      });
+      console.log('[Prediction] Response: POST /api/modeling/predict', {
+        ok: response.ok,
+        status: response.status
       });
 
       const contentType = response.headers.get('content-type') || '';
       const body = contentType.includes('application/json')
         ? await response.json().catch(() => null)
         : await response.text().catch(() => '');
+      console.log('[Prediction] Payload: POST /api/modeling/predict', body);
 
       if (!response.ok) {
         const detail = typeof body === 'string'
@@ -355,6 +401,7 @@ export default function Prediction() {
         });
       });
     } catch (error) {
+      console.log('[Prediction] Error: POST /api/modeling/predict', error);
       await swal(
         '預測失敗',
         error instanceof Error ? error.message : '呼叫預測 API 失敗。',
@@ -400,14 +447,24 @@ export default function Prediction() {
               <motion.div
                 whileHover={{ scale: 1.005 }}
                 onClick={openFilePicker}
-                className="group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-6 py-16 text-center transition-all hover:border-[#82b091] hover:bg-[#82b091]/5"
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`group relative flex cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed px-6 py-16 text-center transition-all ${
+                  isDragOver
+                    ? 'border-[#82b091] bg-[#82b091]/10'
+                    : 'border-slate-200 bg-slate-50/50 hover:border-[#82b091] hover:bg-[#82b091]/5'
+                }`}
               >
                 <div className="relative z-10 flex flex-col items-center space-y-6">
                   <div className="flex h-20 w-20 items-center justify-center rounded-full border border-slate-100 bg-white text-[#82b091] shadow-sm transition-transform group-hover:scale-110">
                     <FileUp size={36} />
                   </div>
                   <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-[#111827]">點擊選擇資料 CSV</h3>
+                    <h3 className="text-xl font-bold text-[#111827]">
+                      {isDragOver ? '放開以上傳 CSV' : '點擊或拖拉資料 CSV 到此處'}
+                    </h3>
                     <p className="text-slate-400">
                       由 CSV 的 `Label` 欄位解析 White 與樣本光譜
                     </p>

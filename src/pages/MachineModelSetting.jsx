@@ -428,7 +428,15 @@ export default function MachineModelSetting() {
                 </button>
               </div>
 
-              <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="mt-6 flex flex-col gap-4">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Group Name
+                  </p>
+                  <p className="mt-3 text-2xl font-bold text-[#111827] break-all">
+                    {isLoadingCurrentModel ? '--' : groupName || '--'}
+                  </p>
+                </div>
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Current Models
@@ -468,9 +476,7 @@ export default function MachineModelSetting() {
                         <div className="mt-4">
                           <ReadonlyField label="ITEM NAME" value={item.itemName} />
                         </div>
-                        <div className="mt-4">
-                          <ReadonlyField label="DESCRIPTION" value={item.description} />
-                        </div>
+
                       </div>
                     ))}
                   </div>
