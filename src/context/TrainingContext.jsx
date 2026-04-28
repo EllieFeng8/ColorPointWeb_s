@@ -53,6 +53,10 @@ function extractStatus(payload) {
   );
 }
 
+function normalizeStatus(status) {
+  return String(status ?? '').toLowerCase();
+}
+
 function extractTaskCategory(payload) {
   return (
     payload?.task_category ??
@@ -224,6 +228,7 @@ export function TrainingProvider({ children }) {
 
           const trainedModelId = extractTrainedModelId(body);
           let nextModelInfo = null;
+          let resolvedStatus = nextStatus ?? 'completed';
 
           if (trainingState.trainingJobId) {
             const trainingStatus = await fetchTrainingStatus(trainingState.trainingJobId);
@@ -252,6 +257,7 @@ export function TrainingProvider({ children }) {
               models: extractModels(trainingDetail) ?? trainingState.trainingSummary?.models ?? '--',
               status: extractStatus(trainingStatus) ?? extractStatus(trainingDetail) ?? nextStatus ?? 'completed'
             };
+            resolvedStatus = nextModelInfo.status;
 
             window.sessionStorage.setItem('training_status_detail', JSON.stringify(trainingStatus));
             window.sessionStorage.setItem('evaluation_model_detail', JSON.stringify(trainingDetail));
@@ -264,25 +270,39 @@ export function TrainingProvider({ children }) {
             }
           }
 
+          const normalizedStatus = normalizeStatus(resolvedStatus);
+          const nextProgress = normalizedStatus === 'completed'
+            ? 100
+            : normalizedStatus === 'error'
+              ? 0
+              : trainingState.progress;
+          const nextStatusText = normalizedStatus === 'completed'
+            ? '訓練完成，可以前往評估匯出。'
+            : normalizedStatus === 'error'
+              ? '訓練失敗。'
+              : '模型訓練中，等待評估完成...';
+
           window.sessionStorage.setItem('evaluation_result', JSON.stringify(body));
           setTrainingState((current) => ({
             ...current,
-            progress: 100,
-            statusText: '訓練完成，可以前往評估匯出。',
+            progress: nextProgress,
+            statusText: nextStatusText,
             modelInfo: nextModelInfo ?? (
               current.modelInfo
-                ? { ...current.modelInfo, status: nextStatus ?? 'completed' }
+                ? { ...current.modelInfo, status: resolvedStatus }
                 : {
                     taskCategory: current.trainingSummary?.taskCategory ?? '--',
                     models: current.trainingSummary?.models ?? '--',
-                    status: nextStatus ?? 'completed'
+                    status: resolvedStatus
                   }
             ),
             bestModelId: nextModelInfo?.bestModelId ?? current.bestModelId ?? '',
-            completionState: {
-              evaluationResult: body,
-              modelInfo: nextModelInfo
-            },
+            completionState: normalizedStatus === 'completed'
+              ? {
+                  evaluationResult: body,
+                  modelInfo: nextModelInfo
+                }
+              : null,
             error: ''
           }));
           return;
@@ -368,8 +388,10 @@ export function TrainingProvider({ children }) {
   const setTrainingError = React.useCallback((message) => {
     setTrainingState((current) => ({
       ...current,
+      progress: 0,
       error: message,
-      statusText: message
+      statusText: message,
+      modelInfo: current.modelInfo ? { ...current.modelInfo, status: 'error' } : current.modelInfo
     }));
   }, []);
 
