@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Boxes, ChevronDown, List, Plus, RefreshCcw, Save, Trash2 } from 'lucide-react';
+import { Boxes, List, Plus, RefreshCcw, Save, Trash2 } from 'lucide-react';
 import swal from 'sweetalert';
 import NavBar from '../components/NavBar.jsx';
+import ModelNameDropdown from '../components/ModelNameDropdown.jsx';
 
 function extractModelNames(payload) {
   if (Array.isArray(payload?.model_names)) {
@@ -51,7 +52,9 @@ function normalizeModelNameOptions(payload) {
       uniqueOptions.set(`name:${modelName}`, {
         key: `name-${index}-${modelName}`,
         modelId: '',
-        modelName
+        value: modelName,
+        modelName,
+        note: ''
       });
       return;
     }
@@ -76,7 +79,9 @@ function normalizeModelNameOptions(payload) {
       uniqueOptions.set(uniqueKey, {
         key: modelId || `name-${index}-${modelName}`,
         modelId,
-        modelName
+        value: modelId || modelName,
+        modelName,
+        note: String(item?.note ?? '').trim()
       });
     }
   });
@@ -553,30 +558,16 @@ export default function MachineModelSetting() {
                         </Field>
 
                         <Field label="MODEL NAME">
-                          <div className="relative">
-                            <select
-                              value={item.modelId || item.modelName}
-                              onChange={(event) => {
-                                const selectedOption = modelNames.find((option) => (
-                                  (option.modelId || option.modelName) === event.target.value
-                                ));
-                                handleEditableModelChange(item.id, 'modelName', selectedOption?.modelName ?? '');
-                                handleEditableModelChange(item.id, 'modelId', selectedOption?.modelId ?? '');
-                              }}
-                              disabled={isLoadingNames || modelNames.length === 0}
-                              className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm font-medium text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-                            >
-                              <option value="">
-                                {isLoadingNames ? '讀取中...' : '請選擇模型名稱'}
-                              </option>
-                              {modelNames.map((modelOption) => (
-                                <option key={modelOption.key} value={modelOption.modelId || modelOption.modelName}>
-                                  {modelOption.modelName}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-                          </div>
+                          <ModelNameDropdown
+                            value={item.modelId || item.modelName}
+                            options={modelNames}
+                            placeholder={isLoadingNames ? '讀取中...' : '請選擇模型名稱'}
+                            disabled={isLoadingNames || modelNames.length === 0}
+                            onChange={(selectedOption) => {
+                              handleEditableModelChange(item.id, 'modelName', selectedOption?.modelName ?? '');
+                              handleEditableModelChange(item.id, 'modelId', selectedOption?.modelId ?? '');
+                            }}
+                          />
                         </Field>
                       </div>
                     </div>

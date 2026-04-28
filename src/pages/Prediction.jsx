@@ -5,6 +5,7 @@ import { useLocation } from 'react-router-dom';
 import swal from 'sweetalert';
 import NavBar from '../components/NavBar.jsx';
 import Footer from '../components/Footer.jsx';
+import ModelNameDropdown from '../components/ModelNameDropdown.jsx';
 import predictionReferenceCsvUrl from '../../sample_data.csv?url';
 
 function formatFileSize(bytes) {
@@ -165,14 +166,26 @@ function extractModelNameItems(payload) {
 
 function normalizeModelNames(payload) {
   return extractModelNameItems(payload)
-    .map((item) => {
+    .map((item, index) => {
       if (typeof item === 'string') {
-        return item.trim();
+        const modelName = item.trim();
+        return {
+          key: `name-${index}-${modelName}`,
+          value: modelName,
+          modelName,
+          note: ''
+        };
       }
 
-      return String(item?.model_name ?? item?.modelName ?? '').trim();
+      const modelName = String(item?.model_name ?? item?.modelName ?? '').trim();
+      return {
+        key: String(item?.model_id ?? item?.modelId ?? item?._id ?? `name-${index}-${modelName}`).trim(),
+        value: modelName,
+        modelName,
+        note: String(item?.note ?? '').trim()
+      };
     })
-    .filter(Boolean);
+    .filter((item) => item.modelName);
 }
 
 export default function Prediction() {
@@ -231,7 +244,7 @@ export default function Prediction() {
         }
 
         setModelNames(names);
-        setSelectedModelName((currentName) => currentName || names[0] || '');
+        setSelectedModelName((currentName) => currentName || names[0]?.value || '');
 
         if (names.length === 0) {
           setModelsError('目前沒有可選擇的模型。');
@@ -528,25 +541,14 @@ export default function Prediction() {
                 選擇模型名稱
               </label>
 
-              <div className="relative">
-                <select
+              <ModelNameDropdown
                   id="prediction-model-select"
                   value={selectedModelName}
-                  onChange={(event) => setSelectedModelName(event.target.value)}
+                  options={modelNames}
+                  placeholder={isLoadingModels ? '模型載入中...' : '請選擇模型'}
                   disabled={isLoadingModels || modelNames.length === 0}
-                  className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-sm font-medium text-slate-700 outline-none transition-all focus:border-[#82b091] focus:ring-2 focus:ring-[#82b091]/20 disabled:cursor-not-allowed disabled:bg-slate-100"
-                >
-                  <option value="">
-                    {isLoadingModels ? '模型載入中...' : '請選擇模型'}
-                  </option>
-                  {modelNames.map((modelName) => (
-                    <option key={modelName} value={modelName}>
-                      {modelName}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              </div>
+                  onChange={(option) => setSelectedModelName(option.value)}
+                />
 
               <p className="mt-3 text-sm text-slate-500">
                 {modelsError || `目前共載入 ${modelNames.length} 個模型名稱。`}
