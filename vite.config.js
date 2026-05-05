@@ -5,8 +5,9 @@ import path from 'path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://192.168.0.126:8000';
-
+  // const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000';
+  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8000';
+  // const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'http://192.168.0.126:8000';
   return {
     plugins: [
       react(),

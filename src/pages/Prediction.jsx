@@ -382,10 +382,11 @@ export default function Prediction() {
         },
         body: JSON.stringify(requestPayload)
       });
-      console.log('[Prediction] Response: POST /api/modeling/predict', {
-        ok: response.ok,
-        status: response.status
-      });
+      // console.log('[Prediction] Response: POST /api/modeling/predict', {
+      //   ok: response.ok,
+      //   status: response.status,
+      //   response: response.body
+      // });
 
       const contentType = response.headers.get('content-type') || '';
       const body = contentType.includes('application/json')
