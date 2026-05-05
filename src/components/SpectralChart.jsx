@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef,useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
 import { ChevronRight, Expand, Shrink } from 'lucide-react';
 
@@ -7,6 +7,7 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
     ? rawSeries.samples.map((sample) => ({
         name: `${sample.label} | 原始光譜`,
         type: 'line',
+        triggerLineEvent: true,
         symbol: 'none',
         showSymbol: false,
         smooth: true,
@@ -44,6 +45,7 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
     ? processedSeries.samples.map((sample, index) => ({
         name: `${sample.label} | 處理後光譜`,
         type: 'line',
+        triggerLineEvent: true,
         symbol: 'none',
         showSymbol: false,
         smooth: true,
@@ -78,6 +80,10 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
   return [...rawEntries, ...processedEntries];
 }
 
+function getSeriesColor(seriesEntry, fallbackColor = '#64748b') {
+  return seriesEntry?.lineStyle?.color ?? fallbackColor;
+}
+
 export default function SpectralChart({
   rawSeries = { wavelengths: [], samples: [] },
   processedSeries = { wavelengths: [], samples: [] },
@@ -87,6 +93,7 @@ export default function SpectralChart({
 }) {
   const chartRef = useRef(null);
   const expandedChartRef = useRef(null);
+  const activeSeriesIndexRef = useRef(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const wavelengths = useMemo(() => {
     if (visibleSeries === 'raw') {
@@ -117,6 +124,7 @@ export default function SpectralChart({
     }
 
     const chart = echarts.getInstanceByDom(container) ?? echarts.init(container);
+    activeSeriesIndexRef.current = null;
 
     chart.setOption({
       animationDuration: 400,
@@ -153,6 +161,7 @@ export default function SpectralChart({
       },
       tooltip: {
         trigger: 'axis',
+        triggerOn: 'none',
         axisPointer: {
           type: 'line',
           snap: true,
@@ -170,25 +179,31 @@ export default function SpectralChart({
         },
         extraCssText: 'box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); border-radius: 16px;',
         formatter: (params) => {
-          const wavelength = params[0]?.axisValue ?? '--';
-          const rows = params.map((item) => {
-            const meta = item.seriesId ? series.find((entry) => entry.name === item.seriesName)?.meta : null;
-            return `
-              <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;">
-                <span style="font-size:10px;font-weight:600;color:#64748b;">
-                  ${meta?.label ?? item.seriesName} | ${selectedComponent}: ${meta?.componentValue ?? '--'}
-                </span>
-                <span style="font-size:12px;font-weight:700;color:${item.color};">${item.data ?? '--'}</span>
-              </div>
-            `;
-          }).join('');
+          const paramList = Array.isArray(params) ? params : [params];
+          const activeSeriesIndex = activeSeriesIndexRef.current;
+          const item = paramList.find((param) => param.seriesIndex === activeSeriesIndex);
+          const seriesEntry = Number.isInteger(activeSeriesIndex) ? series[activeSeriesIndex] : null;
+
+          if (!item || !seriesEntry) {
+            return '';
+          }
+
+          const wavelength = wavelengths[item.dataIndex] ?? item.axisValue ?? '--';
+          const meta = seriesEntry.meta;
+          const spectralValue = seriesEntry.data?.[item.dataIndex] ?? item.value ?? item.data ?? '--';
+          const tooltipColor = getSeriesColor(seriesEntry, item.color);
 
           return `
             <div style="min-width:220px;">
               <p style="margin:0 0 4px;font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:0.18em;text-transform:uppercase;">Component</p>
               <p style="margin:0 0 4px;font-size:14px;font-weight:800;color:#0f172a;">${selectedComponent || '--'}</p>
               <p style="margin:0 0 10px;font-size:12px;font-weight:800;color:#0f172a;">${wavelength} nm</p>
-              ${rows}
+              <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:4px;">
+                <span style="font-size:10px;font-weight:600;color:#64748b;">
+                  ${meta?.label ?? item.seriesName} | ${selectedComponent}: ${meta?.componentValue ?? '--'}
+                </span>
+                <span style="font-size:12px;font-weight:700;color:${tooltipColor};">${spectralValue}</span>
+              </div>
             </div>
           `;
         }
@@ -292,11 +307,76 @@ export default function SpectralChart({
     const handleResize = () => {
       chart.resize();
     };
+    const hideTooltip = () => {
+      activeSeriesIndexRef.current = null;
+      chart.dispatchAction({ type: 'hideTip' });
+    };
+    const getDataIndexFromPointer = (event) => {
+      const seriesIndex = event.seriesIndex;
+      const offsetX = event.event?.offsetX;
+      const offsetY = event.event?.offsetY;
+
+      if (
+        !Number.isInteger(seriesIndex) ||
+        !Number.isFinite(offsetX) ||
+        !Number.isFinite(offsetY)
+      ) {
+        return null;
+      }
+
+      const dataPoint = chart.convertFromPixel({ seriesIndex }, [offsetX, offsetY]);
+      const rawDataIndex = Array.isArray(dataPoint) ? dataPoint[0] : dataPoint;
+      const dataIndex = Math.round(Number(rawDataIndex));
+      const seriesDataLength = series[seriesIndex]?.data?.length ?? 0;
+      const maxDataIndex = Math.min(
+        seriesDataLength,
+        wavelengths.length > 0 ? wavelengths.length : seriesDataLength
+      ) - 1;
+
+      if (!Number.isFinite(dataIndex) || maxDataIndex < 0) {
+        return null;
+      }
+
+      return Math.min(Math.max(dataIndex, 0), maxDataIndex);
+    };
+    const showSeriesTooltip = (event) => {
+      if (event.seriesType !== 'line' || !Number.isInteger(event.seriesIndex)) {
+        return;
+      }
+
+      const dataIndex = getDataIndexFromPointer(event);
+
+      if (dataIndex === null) {
+        return;
+      }
+
+      activeSeriesIndexRef.current = event.seriesIndex;
+      chart.dispatchAction({
+        type: 'showTip',
+        seriesIndex: event.seriesIndex,
+        dataIndex
+      });
+    };
+    const handleSeriesMouseOut = (event) => {
+      if (event.seriesIndex === activeSeriesIndexRef.current) {
+        hideTooltip();
+      }
+    };
 
     window.addEventListener('resize', handleResize);
+    chart.on('mouseover', { seriesType: 'line' }, showSeriesTooltip);
+    chart.on('mousemove', { seriesType: 'line' }, showSeriesTooltip);
+    chart.on('click', { seriesType: 'line' }, showSeriesTooltip);
+    chart.on('mouseout', { seriesType: 'line' }, handleSeriesMouseOut);
+    chart.getZr().on('globalout', hideTooltip);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      chart.off('mouseover', showSeriesTooltip);
+      chart.off('mousemove', showSeriesTooltip);
+      chart.off('click', showSeriesTooltip);
+      chart.off('mouseout', handleSeriesMouseOut);
+      chart.getZr().off('globalout', hideTooltip);
       chart.dispose();
     };
   }, [isExpanded, selectedComponent, series, wavelengths]);
