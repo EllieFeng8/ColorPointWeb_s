@@ -232,7 +232,6 @@ const CLASSIFICATION_METRICS = [
   { key: 'accuracy', label: 'Accuracy' },
   { key: 'auc', label: 'AUC' },
   { key: 'precision_score', label: 'Precision Score' },
-  { key: 'precision', label: 'Precision' },
   { key: 'recall', label: 'Recall' },
   { key: 'f1_score', label: 'F1 Score' },
 ];

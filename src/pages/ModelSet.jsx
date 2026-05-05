@@ -148,6 +148,36 @@ function getDefaultLdaEstimators(nClasses, wavelengthsLength) {
     return lowerBound < 10 ? String(lowerBound + 1) : '';
 }
 
+function normalizeTaskCategory(value) {
+    return value === 'classification' ? 'classification' : 'regression';
+}
+
+const TASK_CATEGORY_STORAGE_KEY = 'colorPoint.taskCategory';
+
+function getStoredTaskCategory() {
+    if (typeof window === 'undefined') {
+        return '';
+    }
+
+    try {
+        return window.sessionStorage.getItem(TASK_CATEGORY_STORAGE_KEY) || '';
+    } catch {
+        return '';
+    }
+}
+
+function setStoredTaskCategory(value) {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    try {
+        window.sessionStorage.setItem(TASK_CATEGORY_STORAGE_KEY, normalizeTaskCategory(value));
+    } catch {
+        // Ignore storage errors and keep router state as the source of truth.
+    }
+}
+
 function buildRegressionModelConfig(modelKey, options) {
     const {
         isGridSearch,
@@ -252,8 +282,12 @@ export default function ModelSet() {
     const selectedFileId = location.state?.fileId ?? '';
     const selectedComponent = location.state?.component ?? '';
     const wavelengthsLength = Number(location.state?.wavelengthsLength ?? 0);
-    const routedTaskCategory = location.state?.taskCategory ?? 'regression';
-    const [activeTab, setActiveTab] = useState(routedTaskCategory);
+    const activeTab = normalizeTaskCategory(
+        location.state?.taskCategory || getStoredTaskCategory()
+    );
+    const activeTaskCategoryLabel = activeTab === 'regression'
+        ? '回歸 (Regression)'
+        : '分類 (Classification)';
     const [selectedRegressionModel, setSelectedRegressionModel] = useState('pls');
     const [selectedClassificationModel, setSelectedClassificationModel] = useState('svm');
     const [svrKernel, setSvrKernel] = useState('linear');
@@ -318,6 +352,10 @@ export default function ModelSet() {
                     ? Math.max(parseNumberList(kmeansNeighbors).length, 1)
                     : 0;
     const defaultLdaEstimators = getDefaultLdaEstimators(nClasses, wavelengthsLength);
+
+    useEffect(() => {
+        setStoredTaskCategory(activeTab);
+    }, [activeTab]);
 
     useEffect(() => {
         if (activeTab !== 'classification' || !selectedFileId) {
@@ -670,19 +708,9 @@ export default function ModelSet() {
                                 </motion.h2>
                             </div>
                         </header>
-                        {/* Tabs */}
-                        <div className="flex border-b border-slate-200 mb-8">
-                            <TabButton
-                                active={activeTab === 'regression'}
-                                onClick={() => setActiveTab('regression')}
-                                label="回歸 (Regression)"
-                            />
-                            <TabButton
-                                active={activeTab === 'classification'}
-                                onClick={() => setActiveTab('classification')}
-                                label="分類 (Classification)"
-                            />
-
+                        <div className="mb-8 border-b border-slate-200 pb-4">
+                            <p className="text-sm font-semibold text-slate-400">模型任務類型</p>
+                            <p className="mt-1 text-lg font-bold text-[#659475]">{activeTaskCategoryLabel}</p>
                         </div>
 
                         {/* Model Selection Section */}
@@ -1136,26 +1164,12 @@ export default function ModelSet() {
                         preprocessingId,
                         fileId: selectedFileId,
                         component: selectedComponent,
-                        wavelengthsLength
+                        wavelengthsLength,
+                        taskCategory: activeTab
                     }}
                 />
             </div>
         </div>
-    );
-}
-
-function TabButton({ label, active, onClick }) {
-    return (
-        <button
-            onClick={onClick}
-            className={`px-8 py-3 text-sm transition-all border-b-2 ${
-                active
-                    ? 'font-bold border-[#659475] text-[#659475]'
-                    : 'font-medium text-slate-400 hover:text-slate-600 border-transparent'
-            }`}
-        >
-            {label}
-        </button>
     );
 }
 

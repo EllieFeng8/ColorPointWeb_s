@@ -112,6 +112,36 @@ function getLatestUploadRecord(records) {
   )[0] ?? null;
 }
 
+const TASK_CATEGORY_STORAGE_KEY = 'colorPoint.taskCategory';
+
+function normalizeTaskCategory(value) {
+  return value === 'classification' ? 'classification' : 'regression';
+}
+
+function getStoredTaskCategory() {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  try {
+    return window.sessionStorage.getItem(TASK_CATEGORY_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredTaskCategory(value) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(TASK_CATEGORY_STORAGE_KEY, normalizeTaskCategory(value));
+  } catch {
+    // Ignore storage errors and keep router state as the source of truth.
+  }
+}
+
 const Toggle = ({ checked, onChange }) => (
     <button
         onClick={() => onChange(!checked)}
@@ -130,7 +160,9 @@ const Toggle = ({ checked, onChange }) => (
 export default function Preprocessing() {
   const location = useLocation();
   const routedFileId = location.state?.fileId ?? '';
-  const routedTaskCategory = location.state?.taskCategory ?? 'regression';
+  const routedTaskCategory = normalizeTaskCategory(
+    location.state?.taskCategory || getStoredTaskCategory()
+  );
   const [baseline, setBaseline] = useState(true);
   const [snv, setSnv] = useState(true);
   const [sg, setSg] = useState(false);
@@ -145,7 +177,7 @@ export default function Preprocessing() {
   const [manualEnd, setManualEnd] = useState('1698');
   const [vipThreshold, setVipThreshold] = useState('1.2');
   const [rfTopN, setRfTopN] = useState('20');
-  const [carsIterations, setCarsIterations] = useState('20');
+  const [carsIterations, setCarsIterations] = useState('21');
   const [carsKFold, setCarsKFold] = useState('3');
   const [selectedFileId, setSelectedFileId] = useState('');
   const [componentOptions, setComponentOptions] = useState([]);
@@ -162,6 +194,10 @@ export default function Preprocessing() {
   const maxSgWindowSize = rawWavelengthCount > 0
     ? (rawWavelengthCount % 2 === 1 ? rawWavelengthCount : rawWavelengthCount - 1)
     : 1;
+
+  useEffect(() => {
+    setStoredTaskCategory(routedTaskCategory);
+  }, [routedTaskCategory]);
 
   useEffect(() => {
     if (routedFileId) {
