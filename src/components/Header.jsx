@@ -11,7 +11,7 @@ export default function Header() {
           animate={{ opacity: 1, y: 0 }}
           className="text-4xl font-extrabold tracking-tight text-[#111827]"
         >
-          匯入光譜檔案
+          匯入數據資料
         </motion.h2>
         <motion.p
           initial={{ opacity: 0 }}
@@ -19,7 +19,7 @@ export default function Header() {
           transition={{ delay: 0.1 }}
           className="text-slate-500 text-lg"
         >
-          請上傳或拖放您的光譜數據檔案（支持 .csv, .spc, .jdx 格式）
+          請上傳或拖放您的數據檔案（支援 .csv, .spc, .jdx 格式）
         </motion.p>
       </div>
       <div className="flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-full bg-[#82b091]/10 text-[#659475] border border-[#82b091]/20">

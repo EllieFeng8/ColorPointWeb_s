@@ -158,7 +158,7 @@ function isAllowedUploadFile(fileName) {
 }
 
 function getRequirementLabel(extension) {
-  return extension === '.csv' ? 'CSV 光譜檔' : 'JSON 設定檔';
+  return extension === '.csv' ? 'CSV 資料檔' : 'JSON 設定檔';
 }
 
 function getMissingRequiredExtensions(files) {
@@ -599,7 +599,7 @@ export default function Home() {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-4xl font-extrabold tracking-tight text-[#111827]"
               >
-                匯入光譜檔案
+                匯入數據檔案
               </motion.h2>
               <motion.p
                   initial={{ opacity: 0 }}
@@ -840,7 +840,7 @@ export default function Home() {
           </section>
 
           <Footer
-            primaryLabel="下一步：前處理"
+            primaryLabel="下一步：資料前處理"
             onPrimaryClick={handlePrimaryAction}
             primaryDisabled={hasUploadingFiles}
             secondaryLabel="取消"

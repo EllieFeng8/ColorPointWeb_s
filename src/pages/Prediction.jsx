@@ -69,7 +69,7 @@ function parsePredictionCsv(text) {
     : labelIndex + 1;
 
   if (valueStartIndex >= header.length) {
-    throw new Error('CSV 缺少光譜數值欄位。');
+    throw new Error('CSV 缺少波長數值欄位。');
   }
 
   const spectraByLabel = {};
@@ -358,12 +358,12 @@ export default function Prediction() {
 
     const sampleSpectrum = parsedCsv.spectraByLabel[selectedSampleLabel];
     if (!Array.isArray(sampleSpectrum) || sampleSpectrum.length === 0) {
-      await swal('資料不足', `找不到樣本 ${selectedSampleLabel} 的光譜資料。`, 'warning');
+      await swal('資料不足', `找不到樣本 ${selectedSampleLabel} 的資料。`, 'warning');
       return;
     }
 
     if (parsedCsv.whiteSpectrum.length !== sampleSpectrum.length) {
-      await swal('資料錯誤', 'White 與 sample 光譜長度不一致，無法送出預測。', 'error');
+      await swal('資料錯誤', 'White 與 sample 長度不一致，無法送出預測。', 'error');
       return;
     }
 
@@ -444,7 +444,7 @@ export default function Prediction() {
               transition={{ delay: 0.1 }}
               className="text-lg text-slate-500"
             >
-              上傳光譜檔案並選擇模型，準備執行預測。
+              上傳資料檔案並選擇模型，準備執行預測。
             </motion.p>
           </header>
 
@@ -480,7 +480,7 @@ export default function Prediction() {
                       {isDragOver ? '放開以上傳 CSV' : '點擊或拖拉資料 CSV 到此處'}
                     </h3>
                     <p className="text-slate-400">
-                      由 CSV 的 `Label` 欄位解析 White 與樣本光譜
+                      由 CSV 的 `Label` 欄位解析 White 與樣本資料
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center justify-center gap-3">

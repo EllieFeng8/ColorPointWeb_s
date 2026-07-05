@@ -168,6 +168,7 @@ export default function Preprocessing() {
   const [sg, setSg] = useState(false);
   const [derivative, setDerivative] = useState(false);
   const [normalization, setNormalization] = useState(true);
+  const [featureExtraction, setFeatureExtraction] = useState(false);
   const [sgWindowSize, setSgWindowSize] = useState('11');
   const [sgPolynomialOrder, setSgPolynomialOrder] = useState('2');
   const [derivativeOrder, setDerivativeOrder] = useState('1');
@@ -304,12 +305,22 @@ export default function Preprocessing() {
     loadSpectralDatasets();
   }, [selectedFileId, baseline]);
 
+  // 特徵抽取（製程曲線）：與曲線層級方法互斥。開啟時建議套 z-score 標準化。
+  const handleFeatureExtractionChange = (next) => {
+    setFeatureExtraction(next);
+    if (next) {
+      setNormalization(true);
+      setNormalizationType('z-score');
+    }
+  };
+
   const resetSettings = () => {
     setBaseline(true);
     setSnv(true);
     setSg(false);
     setDerivative(false);
     setNormalization(true);
+    setFeatureExtraction(false);
     setSgWindowSize('11');
     setSgPolynomialOrder('2');
     setDerivativeOrder('1');
@@ -355,6 +366,7 @@ export default function Preprocessing() {
     sg,
     derivative,
     normalization,
+    featureExtraction,
     sgWindowSize,
     sgPolynomialOrder,
     derivativeOrder,
@@ -379,7 +391,7 @@ export default function Preprocessing() {
       return;
     }
 
-    if (wavelengthMethod === 'manual_clip') {
+    if (!featureExtraction && wavelengthMethod === 'manual_clip') {
       const start = Number(manualStart);
       const end = Number(manualEnd);
 
@@ -394,7 +406,7 @@ export default function Preprocessing() {
       }
     }
 
-    if (wavelengthMethod === 'VIP') {
+    if (!featureExtraction && wavelengthMethod === 'VIP') {
       const threshold = Number(vipThreshold);
 
       if (!vipThreshold || Number.isNaN(threshold)) {
@@ -408,7 +420,7 @@ export default function Preprocessing() {
       }
     }
 
-    if (wavelengthMethod === 'RF_Feature_Importance') {
+    if (!featureExtraction && wavelengthMethod === 'RF_Feature_Importance') {
       const topN = Number(rfTopN);
 
       if (!rfTopN || Number.isNaN(topN) || !Number.isInteger(topN)) {
@@ -422,7 +434,7 @@ export default function Preprocessing() {
       }
     }
 
-    if (sg) {
+    if (!featureExtraction && sg) {
       const windowSize = Number(sgWindowSize);
       const polynomialOrder = Number(sgPolynomialOrder);
 
@@ -447,7 +459,7 @@ export default function Preprocessing() {
       }
     }
 
-    if (derivative) {
+    if (!featureExtraction && derivative) {
       const order = Number(derivativeOrder);
 
       if (!derivativeOrder || Number.isNaN(order) || !Number.isInteger(order)) {
@@ -461,7 +473,7 @@ export default function Preprocessing() {
       }
     }
 
-    if (wavelengthMethod === 'CARS') {
+    if (!featureExtraction && wavelengthMethod === 'CARS') {
       const nIters = Number(carsIterations);
       const kFold = Number(carsKFold);
 
@@ -492,49 +504,60 @@ export default function Preprocessing() {
       methods.standard_white = true;
     }
 
-    if (snv) {
-      methods.snv = true;
-    }
+    if (featureExtraction) {
+      // 製程曲線特徵抽取：與曲線層級方法互斥，後端只吃 feature_extraction + normalization。
+      methods.feature_extraction = true;
 
-    if (sg) {
-      methods.sg = {
-        window_size: Number(sgWindowSize),
-        polynomial_order: Number(sgPolynomialOrder)
+      if (normalization) {
+        methods.normalization = {
+          type: normalizationType
+        };
+      }
+    } else {
+      if (snv) {
+        methods.snv = true;
+      }
+
+      if (sg) {
+        methods.sg = {
+          window_size: Number(sgWindowSize),
+          polynomial_order: Number(sgPolynomialOrder)
+        };
+      }
+
+      if (derivative) {
+        methods.derivative = {
+          order: Number(derivativeOrder)
+        };
+      }
+
+      if (normalization) {
+        methods.normalization = {
+          type: normalizationType
+        };
+      }
+
+      methods.wavelength_selection = {
+        method: wavelengthMethod
       };
-    }
 
-    if (derivative) {
-      methods.derivative = {
-        order: Number(derivativeOrder)
-      };
-    }
+      if (wavelengthMethod === 'manual_clip') {
+        methods.wavelength_selection.manual_start = Number(manualStart);
+        methods.wavelength_selection.manual_end = Number(manualEnd);
+      }
 
-    if (normalization) {
-      methods.normalization = {
-        type: normalizationType
-      };
-    }
+      if (wavelengthMethod === 'VIP') {
+        methods.wavelength_selection.vip_threshold = Number(vipThreshold);
+      }
 
-    methods.wavelength_selection = {
-      method: wavelengthMethod
-    };
+      if (wavelengthMethod === 'RF_Feature_Importance') {
+        methods.wavelength_selection.top_n = Number(rfTopN);
+      }
 
-    if (wavelengthMethod === 'manual_clip') {
-      methods.wavelength_selection.manual_start = Number(manualStart);
-      methods.wavelength_selection.manual_end = Number(manualEnd);
-    }
-
-    if (wavelengthMethod === 'VIP') {
-      methods.wavelength_selection.vip_threshold = Number(vipThreshold);
-    }
-
-    if (wavelengthMethod === 'RF_Feature_Importance') {
-      methods.wavelength_selection.top_n = Number(rfTopN);
-    }
-
-    if (wavelengthMethod === 'CARS') {
-      methods.wavelength_selection.n_iters = Number(carsIterations);
-      methods.wavelength_selection.k_fold = Number(carsKFold);
+      if (wavelengthMethod === 'CARS') {
+        methods.wavelength_selection.n_iters = Number(carsIterations);
+        methods.wavelength_selection.k_fold = Number(carsKFold);
+      }
     }
 
     const payload = {
@@ -555,6 +578,7 @@ export default function Preprocessing() {
       derivativeOrder,
       normalization,
       normalizationType,
+      featureExtraction,
       wavelengthMethod,
       manualStart,
       manualEnd,
@@ -713,7 +737,7 @@ export default function Preprocessing() {
   const spectralSummaries = [
     {
       key: 'raw',
-      title: '原始光譜',
+      title: '原始資料',
       labelCount: rawSamples.length,
       component: selectedComponent || '--',
       wavelengthCount: spectralDatasets.raw.wavelengths.length
@@ -745,7 +769,7 @@ export default function Preprocessing() {
                       animate={{ opacity: 1, y: 0 }}
                       className="text-4xl font-extrabold tracking-tight text-[#111827]"
                   >
-                    光譜前處理
+                    資料前處理
                   </motion.h2>
                   <motion.p
                       initial={{ opacity: 0 }}
@@ -807,12 +831,12 @@ export default function Preprocessing() {
                         <Toggle checked={baseline} onChange={setBaseline} />
                       </div>
 
-                      <div className="flex items-center justify-between group cursor-pointer">
+                      <div className={`flex items-center justify-between group cursor-pointer transition-opacity ${featureExtraction ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                         <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">SNV 變量校正</span>
                         <Toggle checked={snv} onChange={setSnv} />
                       </div>
 
-                      <div className="space-y-3">
+                      <div className={`space-y-3 transition-opacity ${featureExtraction ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                         <div className="flex items-center justify-between group cursor-pointer">
                           <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">SG 平滑處理</span>
                           <Toggle checked={sg} onChange={setSg} />
@@ -856,7 +880,7 @@ export default function Preprocessing() {
                         )}
                       </div>
 
-                      <div className="space-y-3">
+                      <div className={`space-y-3 transition-opacity ${featureExtraction ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                         <div className="flex items-center justify-between group cursor-pointer">
                           <span className="text-sm font-bold text-slate-600 group-hover:text-slate-900 transition-colors">微分處理</span>
                           <Toggle checked={derivative} onChange={setDerivative} />
@@ -898,7 +922,7 @@ export default function Preprocessing() {
                                 type="radio"
                                 className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20"
                               />
-                              <span className="text-xs font-semibold text-slate-600">平均值</span>
+                              <span className="text-xs font-semibold text-slate-600">平均值 (mean)</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
                               <input
@@ -908,16 +932,16 @@ export default function Preprocessing() {
                                 type="radio"
                                 className="w-4 h-4 text-primary border-slate-200 focus:ring-primary/20"
                               />
-                              <span className="text-xs font-semibold text-slate-600">標準差</span>
+                              <span className="text-xs font-semibold text-slate-600">標準差 (z-score)</span>
                             </label>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="pt-6 border-t border-slate-50">
+                    <div className={`pt-6 border-t border-slate-50 transition-opacity ${featureExtraction ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                        <Filter size={18} className="text-primary" /> 選波段 (NM)
+                        <Filter size={18} className="text-primary" /> Feature Selection
                       </h3>
                       <div className="space-y-5">
                         <div className="grid grid-cols-2 gap-2 mt-4">
@@ -1042,6 +1066,15 @@ export default function Preprocessing() {
                         )}
                       </div>
 
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-50">
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-slate-700">特徵抽取 / Feature Extraction</span>
+                          <Toggle checked={featureExtraction} onChange={handleFeatureExtractionChange} />
+                        </div>
+                      </div>
                     </div>
 
                   </div>

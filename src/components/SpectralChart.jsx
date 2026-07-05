@@ -5,7 +5,7 @@ import { ChevronRight, Expand, Shrink } from 'lucide-react';
 function buildSeries(rawSeries, processedSeries, visibleSeries) {
   const rawEntries = visibleSeries === 'both' || visibleSeries === 'raw'
     ? rawSeries.samples.map((sample) => ({
-        name: `${sample.label} | 原始光譜`,
+        name: `${sample.label} | 原始資料`,
         type: 'line',
         triggerLineEvent: true,
         symbol: 'none',
@@ -43,7 +43,7 @@ function buildSeries(rawSeries, processedSeries, visibleSeries) {
 
   const processedEntries = visibleSeries === 'both' || visibleSeries === 'processed'
     ? processedSeries.samples.map((sample, index) => ({
-        name: `${sample.label} | 處理後光譜`,
+        name: `${sample.label} | 處理後資料`,
         type: 'line',
         triggerLineEvent: true,
         symbol: 'none',
@@ -386,7 +386,7 @@ export default function SpectralChart({
       <div className="bg-white rounded-2xl border border-slate-100 shadow-subtle flex flex-col h-[600px] overflow-hidden">
         <div className="px-8 py-5 border-b border-slate-50 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h3 className="text-sm font-bold text-slate-800">光譜視覺化分析</h3>
+            <h3 className="text-sm font-bold text-slate-800">資料視覺化分析</h3>
             {selectedComponent && (
               <span className="rounded-full bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Component: {selectedComponent}
@@ -398,9 +398,9 @@ export default function SpectralChart({
                 onChange={(event) => onVisibleSeriesChange(event.target.value)}
                 className="min-w-40 appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-[11px] font-bold uppercase tracking-wider text-slate-500 outline-none transition focus:border-primary/30 focus:ring-2 focus:ring-primary/20"
               >
-                {/*<option value="both">原始光譜 + 處理後光譜</option>*/}
-                <option value="raw">原始光譜</option>
-                <option value="processed">處理後光譜</option>
+
+                <option value="raw">原始資料</option>
+                <option value="processed">前處理後資料</option>
               </select>
               <div className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-slate-400">
                 <ChevronRight size={16} className="rotate-90" />
@@ -429,7 +429,7 @@ export default function SpectralChart({
           <div className="flex h-[92vh] w-full max-w-[1600px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-8 py-5">
               <div className="flex items-center gap-4">
-                <h3 className="text-base font-bold text-slate-800">光譜視覺化分析</h3>
+                <h3 className="text-base font-bold text-slate-800">資料視覺化分析</h3>
                 {selectedComponent && (
                   <span className="rounded-full bg-slate-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                     Component: {selectedComponent}
@@ -452,9 +452,9 @@ export default function SpectralChart({
                   onChange={(event) => onVisibleSeriesChange(event.target.value)}
                   className="min-w-40 appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 pr-10 text-[11px] font-bold uppercase tracking-wider text-slate-500 outline-none transition focus:border-primary/30 focus:ring-2 focus:ring-primary/20"
                 >
-                  {/*<option value="both">原始光譜 + 處理後光譜</option>*/}
-                  <option value="raw">原始光譜</option>
-                  <option value="processed">處理後光譜</option>
+
+                  <option value="raw">原始資料</option>
+                  <option value="processed">前處理後資料</option>
                 </select>
                 <div className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-slate-400">
                   <ChevronRight size={16} className="rotate-90" />

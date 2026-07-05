@@ -42,7 +42,7 @@ export default function NavBar() {
               className={navItemClass(isPreprocessingActive)}
           >
               <SlidersHorizontal size={20} />
-              <span className="text-sm font-semibold">光譜前處理</span>
+              <span className="text-sm font-semibold">資料前處理</span>
           </NavLink>
 
           <NavLink

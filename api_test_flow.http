@@ -1,0 +1,1599 @@
+### ============================================================
+### AEYEOT Backend - Complete API Test Flow
+### 包含 Regression (sample_data_reg_multi_white.csv)
+###      Classification (sample_data_cls_multi_white.csv)
+### 使用 instrument_config.json 作為儀器參數
+### ============================================================
+### 使用說明:
+###   1. 啟動服務: uvicorn main:app --reload
+###   2. 依序執行各段落，將回傳的 ID 貼入下方對應的變數
+###   3. {{...}} 為需手動填入的動態變數
+### ============================================================
+
+#@baseUrl = http://localhost:8000
+@baseUrl = http://192.168.1.200
+#@baseUrl = http://localhost
+# ============================================================
+# [0] 健康檢查
+# ============================================================
+
+### 0-1. Health check
+GET {{baseUrl}}/health
+
+### 0-2. Root
+GET {{baseUrl}}/
+
+# ============================================================
+# [BLOCK A] REGRESSION 訓練 Pipeline
+# sample_data_reg_multi_white.csv + instrument_config.json
+# 成分: Water, Protein, Fat, Brix
+# ============================================================
+
+# ── A-1. 上傳 CSV (Regression) ───────────────────────────────
+
+### A-1-1. 上傳 Regression CSV + instrument_config.json
+# 回傳: { "file_id": "...", "filename": "...", "task_category": "regression", ... }
+# 將 file_id 填入 @regFileId
+POST {{baseUrl}}/api/upload/
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="20220727 NIR分析豆渣實驗值對照表.csv"
+Content-Type: text/csv
+
+< 20220727 NIR分析豆渣實驗值對照表.csv
+--boundary
+Content-Disposition: form-data; name="instrument_config"; filename="instrument_config.json"
+Content-Type: application/json
+
+< instrument_config.json
+--boundary
+Content-Disposition: form-data; name="task_category"
+
+regression
+--boundary--
+
+###
+@regFileId = 69f08c9741fc90e81c604358
+
+### A-1-2. 列出所有已上傳檔案
+#GET {{baseUrl}}/api/upload/
+
+### A-1-3. 查詢單一檔案資訊 (從MongoDB取，無光譜數值)
+GET {{baseUrl}}/api/upload/{{regFileId}}
+
+### A-1-4. 預覽 CSV 內容（含 wavelengths, raw 無吸收換算）
+GET {{baseUrl}}/api/upload/{{regFileId}}/preview
+
+### A-1-5. 預覽 Absorbance 轉換後的光譜（需要 instrument_config 與 White row）
+GET {{baseUrl}}/api/upload/{{regFileId}}/absorbance
+
+# ── A-2. 查詢成分 (Components) ───────────────────────────────
+
+### A-2-1. 查詢此檔案的所有成分
+GET {{baseUrl}}/api/preprocessing/components/{{regFileId}}
+
+### A-2-2. 查詢全部檔案的所有成分 (跨檔案去重)
+#GET {{baseUrl}}/api/preprocessing/components
+
+# ── A-3. 前處理 (Preprocessing) - Regression ─────────────────
+
+### A-3-1. 執行前處理：SNV only，成分=Water
+# 回傳: { "preprocessing_id": "...", "status": "running" }
+# 將 preprocessing_id 填入 @regPrepId1
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "component": "Moisture content(%)",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": null
+  }
+}
+
+###
+@regPrepId1 = 69f0911641fc90e81c604388
+
+### A-3-2. 查詢前處理狀態（輪詢直到 status=completed）
+GET {{baseUrl}}/api/preprocessing/status/{{regPrepId1}}
+
+### A-3-3. 取得前處理結果（含處理後光譜資料）
+GET {{baseUrl}}/api/preprocessing/{{regPrepId1}}
+
+### A-3-4. 執行前處理：SNV + SG + 一階微分，成分=Protein
+# 等前一個任務完成再執行
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "component": "Moisture content(%)",
+  "methods": {
+    "snv": true,
+    "sg": {
+      "window_size": 15,
+      "polynomial_order": 3
+    },
+    "derivative": {
+      "order": 1
+    },
+    "normalization": null,
+    "wavelength_selection": null
+  }
+}
+
+###
+@regPrepId2 = 69f0911641fc90e81c604388
+
+### A-3-5. 查詢前處理狀態 - Protein
+GET {{baseUrl}}/api/preprocessing/status/{{regPrepId2}}
+
+### A-3-6. 執行前處理：SNV + SG + 二階微分 + Normalization(mean)，成分=Fat
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "component": "Moisture content(%)",
+  "methods": {
+    "snv": true,
+    "sg": {
+      "window_size": 15,
+      "polynomial_order": 3
+    },
+    "derivative": {
+      "order": 2
+    },
+    "normalization": {
+      "type": "mean"
+    },
+    "wavelength_selection": {
+      "method": "manual_clip",
+      "manual_start": 900,
+      "manual_end": 1300,
+      "vip_threshold": null,
+      "top_n": null,
+      "n_iters": null,
+      "k_fold": null
+    }
+  }
+}
+
+###
+@regPrepId3 = 69f0911641fc90e81c604388
+
+### A-3-7. 查詢前處理狀態 - Fat
+GET {{baseUrl}}/api/preprocessing/status/{{regPrepId3}}
+
+### A-3-8. 執行前處理：SNV + 波長選擇(manual_clip 900~1300)，成分=Brix
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "component": "Brix",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": {
+      "method": "manual_clip",
+      "manual_start": 900,
+      "manual_end": 1300,
+      "vip_threshold": null,
+      "top_n": null,
+      "n_iters": null,
+      "k_fold": null
+    }
+  }
+}
+
+###
+@regPrepId4 = 69f0911641fc90e81c604388
+GET {{baseUrl}}/api/preprocessing/status/{{regPrepId4}}
+
+### A-3-9. 執行前處理：SNV + 波長選擇(VIP)，成分=Water
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "component": "Water",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": {
+      "method": "VIP",
+      "manual_start": null,
+      "manual_end": null,
+      "vip_threshold": 1.0,
+      "top_n": null,
+      "n_iters": null,
+      "k_fold": 5
+    }
+  }
+}
+
+###
+@regPrepId5 = 69f0911641fc90e81c604388
+GET {{baseUrl}}/api/preprocessing/status/{{regPrepId5}}
+
+### A-3-10. 查詢前處理歷史（依檔案）
+#GET {{baseUrl}}/api/preprocessing/history/{{regFileId}}
+
+### A-3-11. 查詢特定成分的前處理歷史
+#GET {{baseUrl}}/api/preprocessing/history/{{regFileId}}?component=Water
+
+### A-3-12. 查詢全部前處理歷史
+#GET {{baseUrl}}/api/preprocessing/history
+
+# ── A-4. 模型訓練 (Training) - Regression ────────────────────
+
+### A-4-1. 訓練 Regression：PLS（使用 Water 前處理結果，grid_search=false）
+# 回傳: { "training_job_id": "...", "status": "running" }
+# 將 training_job_id 填入 @regJobId1
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "PLS": {
+      "enabled": true,
+      "params": {
+        "n_components": 7
+      }
+    },
+    "SVR": {
+      "enabled": false,
+      "params": {}
+    },
+    "RF": {
+      "enabled": false,
+      "params": {}
+    },
+    "XGBoost": {
+      "enabled": false,
+      "params": {}
+    },
+    "CNN": {
+      "enabled": false,
+      "params": {"epochs": 50, "batch_size": 16, "learning_rate": 0.001}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@regJobId1 = 69f0913441fc90e81c604392
+
+### A-4-2. 查詢訓練狀態（輪詢直到 status=completed）
+GET {{baseUrl}}/api/modeling/status/{{regJobId1}}
+
+### A-4-5. 訓練 Regression：啟用 grid_search，PLS + RF
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "PLS": {
+      "enabled": true,
+      "params": {
+        "n_components": 5
+      }
+    },
+    "SVR": {
+      "enabled": false,
+      "params": {}
+    },
+    "RF": {
+      "enabled": true,
+      "params": {
+        "n_estimators": 50,
+        "max_depth": 5
+      }
+    },
+    "XGBoost": {
+      "enabled": false,
+      "params": {}
+    },
+    "CNN": {
+      "enabled": false,
+      "params": {"epochs": 50, "batch_size": 16, "learning_rate": 0.001}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": true,
+    "k_fold": 5
+  }
+}
+
+###
+@regJobId3 = 69f0913441fc90e81c604392
+GET {{baseUrl}}/api/modeling/status/{{regJobId3}}
+
+### A-4-6. 訓練 Regression：不指定前處理（直接使用原始資料）
+#POST {{baseUrl}}/api/modeling/train
+#Content-Type: application/json
+#
+#{
+#  "file_id": "{{regFileId}}",
+#  "preprocessing_id": null,
+#  "task_category": "regression",
+#  "models": {
+#    "PLS": {
+#      "enabled": true,
+#      "params": {
+#        "n_components": 5
+#      }
+#    },
+#    "SVR": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "RF": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "XGBoost": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "CNN": {
+#      "enabled": false,
+#      "params": {"epochs": 50, "batch_size": 16, "learning_rate": 0.001}
+#    }
+#  },
+#  "hyperparameter_tuning": {
+#    "grid_search": false,
+#    "k_fold": 3
+#  }
+#}
+#
+####
+#@regJobId4 = 69e5dca88da4c41352ec8af2
+#GET {{baseUrl}}/api/modeling/status/{{regJobId3}}
+
+### A-4-6b. 訓練 Regression：CNN（PyTorch 1D-CNN，epochs=30）
+# 回傳: { "training_job_id": "...", "status": "running" }
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "CNN": {
+      "enabled": true,
+      "params": {"epochs": 30, "batch_size": 16, "learning_rate": 0.001}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@regCnnJobId = 69f08ce441fc90e81c604376
+GET {{baseUrl}}/api/modeling/status/{{regCnnJobId}}
+
+
+### A-4-6c. 訓練 Regression：LinearRegression（OLS 線性回歸）
+# 與其他模型走同一 flow，只是換 models 的 key。
+# 可調參數: fit_intercept(bool), positive(bool)
+# 回傳: { "training_job_id": "...", "status": "running" }
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "LinearRegression": {
+      "enabled": true,
+      "params": {"fit_intercept": true, "positive": false}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@regLinearJobId = <貼上回傳的 training_job_id>
+GET {{baseUrl}}/api/modeling/status/{{regLinearJobId}}
+
+### A-4-6d. 訓練 Regression：LSTM（PyTorch 序列型，將曲線視為時間序列）
+# 同一 flow；LSTM 對「隨進度/時間變化」的曲線型資料特別合適。
+# 可調參數: hidden_size, num_layers, epochs, batch_size, learning_rate
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "LSTM": {
+      "enabled": true,
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 1,
+        "epochs": 50,
+        "batch_size": 16,
+        "learning_rate": 0.001
+      }
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@regLstmJobId = <貼上回傳的 training_job_id>
+GET {{baseUrl}}/api/modeling/status/{{regLstmJobId}}
+
+### A-4-6e. 訓練 Regression：一次比較多模型（PLS + LinearRegression + LSTM 同任務）
+# 前台若要在同一份資料上並排比較線性與序列模型，一個請求即可。
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": "{{regPrepId1}}",
+  "task_category": "regression",
+  "models": {
+    "PLS": {
+      "enabled": true,
+      "params": {"n_components": 7}
+    },
+    "LinearRegression": {
+      "enabled": true,
+      "params": {"fit_intercept": true, "positive": false}
+    },
+    "LSTM": {
+      "enabled": true,
+      "params": {"hidden_size": 32, "num_layers": 1, "epochs": 50, "batch_size": 16, "learning_rate": 0.001}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@regMultiJobId = <貼上回傳的 training_job_id>
+GET {{baseUrl}}/api/modeling/status/{{regMultiJobId}}
+
+
+### A-4-7. 錯誤測試：task_category 不符（file 是 regression，送 classification）
+# 預期回傳 400 + error_message
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{regFileId}}",
+  "preprocessing_id": null,
+  "task_category": "classification",
+  "models": {
+    "SVC": { "enabled": true, "params": {} }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+### A-4-8. 列出全部訓練任務
+#GET {{baseUrl}}/api/modeling/
+
+
+
+### A-4-9. 取得特定訓練任務詳情
+GET {{baseUrl}}/api/modeling/{{regJobId1}}
+
+# ── A-5. 評估 (Evaluation) - Regression ─────────────────────
+
+### A-5-1. 取得訓練任務下所有模型的評估結果
+GET {{baseUrl}}/api/evaluation/results/{{regJobId1}}
+
+### A-5-2. 取得訓練任務2的評估結果
+#GET {{baseUrl}}/api/evaluation/results/{{regJobId2}}
+
+###
+#@regModelId1 = <從 A-4-2 回傳的 best_model_id 或 A-5-1 回傳的 trained_model_id>
+@regModelId1 = 69f0913541fc90e81c604395
+
+### A-5-3. 取得單一模型詳情（含評估結果）
+GET {{baseUrl}}/api/evaluation/model/{{regModelId1}}
+
+### A-5-4. 匯出訓練結果為 CSV（actual vs predicted）
+GET {{baseUrl}}/api/evaluation/export/training-csv?training_job_id={{regJobId1}}
+
+# ── A-6. 更新模型名稱與備註 - Regression ─────────────────────
+
+### A-6-1. 更新模型的備註 (note)
+#PATCH {{baseUrl}}/api/modeling/models/{{regModelId1}}/note
+#Content-Type: application/json
+#
+#{
+#  "note": "Regression Water PLS 最佳模型，SNV 前處理，R2=0.95"
+#}
+
+### A-6-2. 更新模型名稱與備註（同時修改）
+PATCH {{baseUrl}}/api/modeling/models/{{regModelId1}}/note
+Content-Type: application/json
+
+{
+  "model_name": "PLS",
+  "note": "已命名：Water 成分 PLS 回歸，SNV 前處理"
+}
+
+### A-6-3. 查詢模型的訓練警告
+GET {{baseUrl}}/api/modeling/models/{{regModelId1}}/warnings
+
+### A-6-4. 列出所有模型的唯一名稱
+GET {{baseUrl}}/api/modeling/models/names/all
+
+### A-6-5. 下載模型 .pkl 檔案
+GET {{baseUrl}}/api/modeling/models/69f973fa270ddb3342b528cf/download
+
+# ── A-7. 錯誤情境測試 - Regression ───────────────────────────
+
+### A-7-1. 錯誤：上傳非 CSV 檔案
+# 預期 400 + error_message
+POST {{baseUrl}}/api/upload/
+Content-Type: multipart/form-data; boundary=boundary2
+
+--boundary2
+Content-Disposition: form-data; name="file"; filename="test.txt"
+Content-Type: text/plain
+
+this is not a csv
+--boundary2
+Content-Disposition: form-data; name="task_category"
+
+regression
+--boundary2--
+
+### A-7-2. 錯誤：task_category 非法值
+# 預期 400 + error_message
+POST {{baseUrl}}/api/upload/
+Content-Type: multipart/form-data; boundary=boundary3
+
+--boundary3
+Content-Disposition: form-data; name="file"; filename="sample_data_reg_multi_white.csv"
+Content-Type: text/csv
+
+< D:\specModelProj\sample_data_reg_multi_white.csv
+--boundary3
+Content-Disposition: form-data; name="task_category"
+
+pca
+--boundary3--
+
+### A-7-3. 錯誤：查詢不存在的 file_id
+# 預期 404
+GET {{baseUrl}}/api/upload/000000000000000000000000
+
+### A-7-4. 錯誤：前處理使用不存在的 file_id
+# 預期 404 + error_message
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "000000000000000000000000",
+  "component": "Water",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": null
+  }
+}
+
+### A-7-5. 錯誤：訓練使用不存在的 file_id
+# 預期 404 + error_message
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "000000000000000000000000",
+  "preprocessing_id": null,
+  "task_category": "regression",
+  "models": {
+    "PLS": { "enabled": true, "params": { "n_components": 5 } }
+  },
+  "hyperparameter_tuning": { "grid_search": false, "k_fold": 5 }
+}
+
+### A-7-6. 錯誤：PATCH 不存在的模型 ID
+# 預期 404
+PATCH {{baseUrl}}/api/modeling/models/000000000000000000000000/note
+Content-Type: application/json
+
+{
+  "note": "test"
+}
+
+### A-7-7. 錯誤：PATCH 但未提供任何欄位
+# 預期 400
+PATCH {{baseUrl}}/api/modeling/models/{{regModelId1}}/note
+Content-Type: application/json
+
+{}
+
+# ============================================================
+# [BLOCK B] CLASSIFICATION 訓練 Pipeline
+# new_sample_data_cls_multi_white.csv + instrument_config.json
+# 分類格式: Label=編號, Class=原始類別文字 (建模會做 one-hot 參考)
+# ============================================================
+
+# ── B-1. 上傳 CSV (Classification) ──────────────────────────
+
+### B-1-1. 上傳 Classification CSV + instrument_config.json
+# 回傳: { "file_id": "...", "task_category": "classification", ... }
+# 將 file_id 填入 @clsFileId
+POST {{baseUrl}}/api/upload/
+Content-Type: multipart/form-data; boundary=bndcls
+
+--bndcls
+Content-Disposition: form-data; name="file"; filename="20220727 NIR分類.csv"
+Content-Type: text/csv
+
+< ./20220727 NIR分類.csv
+--bndcls
+Content-Disposition: form-data; name="instrument_config"; filename="instrument_config.json"
+Content-Type: application/json
+
+< instrument_config.json
+--bndcls
+Content-Disposition: form-data; name="task_category"
+
+classification
+--bndcls--
+
+###
+@clsFileId = 69eb1c08f5e807e63305ddfb
+
+### B-1-2. 查詢 Classification 檔案資訊
+GET {{baseUrl}}/api/upload/{{clsFileId}}
+
+### B-1-3. 預覽 Classification CSV
+GET {{baseUrl}}/api/upload/{{clsFileId}}/preview
+
+### B-1-4. Absorbance 預覽 (分類)
+GET {{baseUrl}}/api/upload/{{clsFileId}}/absorbance
+
+# ── B-2. 查詢分類成分 ────────────────────────────────────────
+
+### B-2-1. 查詢 Classification 檔案成分（Apple, Banana, Mango, Lemon）
+GET {{baseUrl}}/api/preprocessing/components/{{clsFileId}}
+
+# ── B-3. 前處理 (Preprocessing) - Classification ─────────────
+
+### B-3-1. 執行前處理：SNV，component=Class（分類目標建議固定使用 Class）
+# 回傳: { "preprocessing_id": "...", "status": "running" }
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{clsFileId}}",
+  "component": "Class",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": null
+  }
+}
+
+###
+@clsPrepId1 = 69eb1c15f5e807e63305de05
+
+### B-3-2. 查詢分類前處理狀態
+GET {{baseUrl}}/api/preprocessing/status/{{clsPrepId1}}
+
+### B-3-3. 取得分類前處理結果
+GET {{baseUrl}}/api/preprocessing/{{clsPrepId1}}
+
+### B-3-4. 執行前處理：SNV + SG，Class
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{clsFileId}}",
+  "component": "Class",
+  "methods": {
+    "snv": true,
+    "sg": {
+      "window_size": 11,
+      "polynomial_order": 2
+    },
+    "derivative": null,
+    "normalization": null,
+    "wavelength_selection": null
+  }
+}
+
+###
+@clsPrepId2 = 69eb1c15f5e807e63305de05
+
+### B-3-5. 查詢 Label 前處理狀態
+GET {{baseUrl}}/api/preprocessing/status/{{clsPrepId2}}
+
+### B-3-6. 執行前處理：SNV + 一階微分 + 波長選擇(RF_Feature_Importance)，Class
+POST {{baseUrl}}/api/preprocessing/execute
+Content-Type: application/json
+
+{
+  "file_id": "{{clsFileId}}",
+  "component": "Class",
+  "methods": {
+    "snv": true,
+    "sg": null,
+    "derivative": {
+      "order": 1
+    },
+    "normalization": null,
+    "wavelength_selection": {
+      "method": "RF_Feature_Importance",
+      "manual_start": null,
+      "manual_end": null,
+      "vip_threshold": null,
+      "top_n": 50,
+      "n_iters": null,
+      "k_fold": null
+    }
+  }
+}
+
+###
+@clsPrepId3 = 69eb1c15f5e807e63305de05
+GET {{baseUrl}}/api/preprocessing/status/{{clsPrepId3}}
+### B-3-7. 前處理歷史（分類檔案）
+#GET {{baseUrl}}/api/preprocessing/history/{{clsFileId}}
+
+# ── B-4. 模型訓練 (Training) - Classification ────────────────
+
+### B-4-1. 訓練 Classification：SVC（使用 Class 前處理結果）
+# 回傳: { "training_job_id": "...", "status": "running" }
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{clsFileId}}",
+  "preprocessing_id": "{{clsPrepId2}}",
+  "task_category": "classification",
+  "models": {
+    "SVC": {
+      "enabled": true,
+      "params": {
+        "C": 1.0,
+        "kernel": "rbf",
+        "gamma": "scale"
+      }
+    },
+    "LDA": {
+      "enabled": false,
+      "params": {}
+    },
+    "KNN": {
+      "enabled": false,
+      "params": {}
+    },
+    "RF": {
+      "enabled": false,
+      "params": {}
+    },
+    "XGBoost": {
+      "enabled": false,
+      "params": {}
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": false,
+    "k_fold": 5
+  }
+}
+
+###
+@clsJobId1 = 69eb1c2ff5e807e63305de0f
+
+### B-4-2. 查詢分類訓練狀態
+GET {{baseUrl}}/api/modeling/status/{{clsJobId1}}
+
+### B-4-3. 訓練 Classification：多模型 SVC + LDA + KNN
+#POST {{baseUrl}}/api/modeling/train
+#Content-Type: application/json
+#
+#{
+#  "file_id": "{{clsFileId}}",
+#  "preprocessing_id": "{{clsPrepId1}}",
+#  "task_category": "classification",
+#  "models": {
+#    "SVC": {
+#      "enabled": true,
+#      "params": {
+#        "C": 10.0,
+#        "kernel": "linear"
+#      }
+#    },
+#    "LDA": {
+#      "enabled": true,
+#      "params": {}
+#    },
+#    "KNN": {
+#      "enabled": true,
+#      "params": {
+#        "n_neighbors": 5
+#      }
+#    },
+#    "RF": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "XGBoost": {
+#      "enabled": false,
+#      "params": {}
+#    }
+#  },
+#  "hyperparameter_tuning": {
+#    "grid_search": false,
+#    "k_fold": 5
+#  }
+#}
+#
+####
+#@clsJobId2 = <貼上回傳的 training_job_id>
+
+### B-4-4. 訓練 Classification：RF + XGBoost，啟用 grid_search
+POST {{baseUrl}}/api/modeling/train
+Content-Type: application/json
+
+{
+  "file_id": "{{clsFileId}}",
+  "preprocessing_id": "{{clsPrepId2}}",
+  "task_category": "classification",
+  "models": {
+    "SVC": {
+      "enabled": false,
+      "params": {}
+    },
+    "LDA": {
+      "enabled": false,
+      "params": {}
+    },
+    "KNN": {
+      "enabled": false,
+      "params": {}
+    },
+    "RF": {
+      "enabled": true,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 10
+      }
+    },
+    "XGBoost": {
+      "enabled": true,
+      "params": {
+        "n_estimators": 100,
+        "max_depth": 5,
+        "learning_rate": 0.1
+      }
+    }
+  },
+  "hyperparameter_tuning": {
+    "grid_search": true,
+    "k_fold": 5
+  }
+}
+
+###
+@clsJobId3 = <貼上回傳的 training_job_id>
+
+### B-4-5. 訓練 Classification：不使用前處理
+#POST {{baseUrl}}/api/modeling/train
+#Content-Type: application/json
+#
+#{
+#  "file_id": "{{clsFileId}}",
+#  "preprocessing_id": null,
+#  "task_category": "classification",
+#  "models": {
+#    "SVC": {
+#      "enabled": true,
+#      "params": {
+#        "C": 1.0,
+#        "kernel": "rbf"
+#      }
+#    },
+#    "LDA": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "KNN": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "RF": {
+#      "enabled": false,
+#      "params": {}
+#    },
+#    "XGBoost": {
+#      "enabled": false,
+#      "params": {}
+#    }
+#  },
+#  "hyperparameter_tuning": {
+#    "grid_search": false,
+#    "k_fold": 3
+#  }
+#}
+#
+####
+#@clsJobId4 = <貼上回傳的 training_job_id>
+
+# ── B-5. 評估 (Evaluation) - Classification ──────────────────
+
+### B-5-1. 取得分類訓練任務的評估結果(可以用來畫圖)
+# 回傳格式 (Array，每個元素對應一個模型)：
+#
+# [
+#   {
+#     "id": "<evaluation_result_id>",
+#     "trained_model_id": "<trained_model_id>",
+#     "training_job_id": "<training_job_id>",
+#     "model_name": "SVC_Fruit_SNV_SG_v1",
+#     "task_category": "classification",
+#
+#     "training_metrics": {
+#       "accuracy": 0.95,
+#       "auc": 0.97,
+#       "precision_score": 0.94,
+#       "recall_score": 0.93,
+#       "f1_score": 0.93,
+#       "confusion_matrix": {
+#         "labels":    ["Apple", "Banana", "Lemon", "Mango"],   ← 前台顯示用（軸標籤）
+#         "label_ids": [0, 1, 2, 3],                            ← 對應 class_map key 的整數索引
+#         "class_map": {                                         ← 索引 → 名稱對照
+#           "0": "Apple",
+#           "1": "Banana",
+#           "2": "Lemon",
+#           "3": "Mango"
+#         },
+#         "class_onehot_map": {                                  ← 名稱 → one-hot 向量
+#           "Apple":  [1, 0, 0, 0],
+#           "Banana": [0, 1, 0, 0],
+#           "Lemon":  [0, 0, 1, 0],
+#           "Mango":  [0, 0, 0, 1]
+#         },
+#         "data": [                                              ← N×N matrix，row=實際類別，col=預測類別
+#           [8, 1, 0, 0],  ← 實際=Apple:  預測Apple=8, Banana=1, Lemon=0, Mango=0
+#           [0, 7, 1, 0],  ← 實際=Banana: 預測Apple=0, Banana=7, Lemon=1, Mango=0
+#           [0, 0, 6, 1],  ← 實際=Lemon:  預測Apple=0, Banana=0, Lemon=6, Mango=1
+#           [1, 0, 0, 9]   ← 實際=Mango:  預測Apple=1, Banana=0, Lemon=0, Mango=9
+#         ]
+#       }
+#     },
+#
+#     "testing_metrics": { ... 同 training_metrics 格式 ... },
+#
+#     "training_chart_data": [
+#       { "label": "H1", "predicted": 1.0, "actual": 1.0 },
+#       { "label": "H2", "predicted": 0.0, "actual": 1.0 },
+#       ...
+#     ],
+#     "testing_chart_data": [ ... 同 training_chart_data 格式 ... ]
+#   }
+# ]
+#
+# ─── 前台讀取 confusion_matrix 對應位置的方式 ───────────────────
+#
+# const ev = results[0];                          // 選第一個模型的評估結果
+# const cm = ev.testing_metrics.confusion_matrix;
+#
+# // cm.labels[i]        → 第 i 個類別的顯示名稱
+# // cm.data[i][j]       → 實際=labels[i]、預測=labels[j] 的樣本數
+# // 對角線 cm.data[i][i] → 預測正確的樣本數
+#
+# // 取得某格的意義：
+# // cm.data[2][3] = 1  → 實際是 Lemon (i=2) 被預測成 Mango (j=3) 的有 1 筆
+#
+# // 轉換成 ECharts heatmap 三元組 [x(col=pred), y(row=actual), value]：
+# const heatmapData = [];
+# for (let row = 0; row < cm.data.length; row++) {
+#   for (let col = 0; col < cm.data[row].length; col++) {
+#     heatmapData.push([col, row, cm.data[row][col]]);
+#   }
+# }
+# // xAxis.data = cm.labels  (Predicted)
+# // yAxis.data = cm.labels  (Actual)
+# // 注意：row=y=Actual，col=x=Predicted，不可顛倒
+#
+# // 取得每個類別的 precision / recall：
+# // precision[j] = cm.data[j][j] / sum(cm.data[*][j])  (第 j 欄的對角值 / 欄合計)
+# // recall[i]    = cm.data[i][i] / sum(cm.data[i][*])  (第 i 列的對角值 / 列合計)
+GET {{baseUrl}}/api/evaluation/results/{{clsJobId1}}
+
+### B-5-2. 取得多模型訓練任務的評估結果
+#GET {{baseUrl}}/api/evaluation/results/{{clsJobId2}}
+
+###
+@clsModelId1 = 69e8ccfe5299d4be0f442ea3
+
+### B-5-3. 取得分類模型詳情
+GET {{baseUrl}}/api/evaluation/model/{{clsModelId1}}
+
+# 備註：classification metrics 會包含
+# - auc
+# - confusion_matrix.class_map
+# - confusion_matrix.class_onehot_map
+
+### B-5-4. 匯出分類評估結果 CSV
+GET {{baseUrl}}/api/evaluation/export/training-csv?training_job_id={{clsJobId1}}
+
+# ── B-6. 更新分類模型名稱與備註 ──────────────────────────────
+
+### B-6-1. 更新分類模型備註
+#PATCH {{baseUrl}}/api/modeling/models/{{clsModelId1}}/note
+#Content-Type: application/json
+#
+#{
+#  "note": "Classification SVC 最佳模型，SNV+SG 前處理，Accuracy=0.92"
+#}
+
+### B-6-2. 更新分類模型名稱與備註
+PATCH {{baseUrl}}/api/modeling/models/{{clsModelId1}}/note
+Content-Type: application/json
+
+{
+  "model_name": "SVC_Fruit_SNV_SG_v1",
+  "note": "水果類別分類，SVC RBF kernel"
+}
+
+### B-6-3. 查詢分類模型警告
+GET {{baseUrl}}/api/modeling/models/{{clsModelId1}}/warnings
+
+# ============================================================
+# [BLOCK C] 單一樣本預測 Pipeline
+# 流程: 上傳新樣本 CSV -> 列出可用模型 -> 帶入 white+sample 進行 predict
+# ============================================================
+
+### C-1. 列出所有模型的名稱（讓使用者選擇）
+GET {{baseUrl}}/api/modeling/models/names/all
+
+### C-2. Regression 單一預測（使用 model_name 選取最新訓練的同名模型）
+# model_name 從 C-1 取得，white/sample 為光譜數值陣列（與訓練資料相同波段數）
+# 回傳: { "model_id": "...", "model_name": "...", "task_category": "regression", "value": 59.4, "applied": [...] }
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+{
+  "model_name": "SVR_b13bdeb5",
+  "white": [
+    1.373571062, 1.45100402, 1.528436977, 1.605869935, 1.683302893,
+    1.76073585, 1.838168808, 1.915601766, 1.993034724, 2.070467681,
+    2.147900639, 2.225333597, 2.302766554, 2.354725766, 2.461016706,
+    2.54793395, 2.637007149, 2.696460804, 2.765226282, 2.825118036,
+    2.873475062, 2.899475722, 2.96855431, 2.990887551, 2.981138586,
+    2.995593693, 2.985753808, 2.969323339, 2.928186132, 2.906832757,
+    2.873341122, 2.838352981, 2.753809059, 2.680553131, 2.596715444,
+    2.51227044, 2.43886709, 2.339045357, 2.233095061, 2.130109729,
+    2.038151763, 1.933471471, 1.838415138, 1.737485061, 1.647634986,
+    1.538684069, 1.474422798, 1.408922871, 1.317021893, 1.238301847,
+    1.183750364, 1.112070229, 1.062505482, 1.051648528, 1.013849924,
+    0.991082694, 0.991209686, 0.994370409, 1.022817059, 1.053066304,
+    1.091607601, 1.136509466, 1.18884606, 1.241300532, 1.306926868,
+    1.374871443, 1.483959824, 1.559569217, 1.650097684, 1.762378856,
+    1.840522452, 1.958309529, 2.053894343, 2.140998399, 2.249523439,
+    2.356364428, 2.447410342, 2.542748364, 2.614134941, 2.721208956,
+    2.748006466, 2.815229088, 2.872260545, 2.903437046, 2.963450228,
+    2.987745908, 2.99460852, 2.994644818, 2.980414654, 2.9727017,
+    2.963263948, 2.919193721, 2.87314292, 2.829577707, 2.774890804,
+    2.696844369, 2.621304914, 2.549463243, 2.449623414, 2.352332524,
+    2.266090856, 2.158083483, 2.056623988, 1.972077299, 1.855872657,
+    1.733132169, 1.666480724, 1.565847238, 1.478073484, 1.401947902,
+    1.318354553, 1.251693189, 1.166499718, 1.033709314, 0.940413535,
+    0.847117757, 0.753821979, 0.660526201, 0.567230422, 0.473934644,
+    0.380638866, 0.287343088, 0.194047309, 0.100751531, 0.007455753,
+    -0.085840025, -0.179135804, -0.272431582, -0.36572736, -0.459023138,
+    -0.552318917, -0.645614695, -0.738910473, -0.832206251, -0.925502029,
+    -1.018797808, -1.112093586, -1.205389364, -1.298685142, -1.391980921,
+    -1.485276699, -1.578572477, -1.671868255, -1.765164034, -1.858459812,
+    -1.95175559, -2.045051368, -2.138347147, -2.231642925, -2.324938703,
+    -2.418234481, -2.51153026, -2.604826038, -2.698121816, -2.791417594,
+    -2.884713373, -2.978009151, -3.071304929, -3.164600707, -3.257896485,
+    -3.351192264, -3.444488042, -3.53778382, -3.631079598, -3.724375377,
+    -3.817671155, -3.910966933, -4.004262711, -4.09755849, -4.190854268,
+    -4.284150046, -4.377445824, -4.470741603, -4.564037381, -4.657333159,
+    -4.750628937, -4.843924716, -4.937220494, -5.030516272, -5.12381205,
+    -5.217107829, -5.310403607, -5.403699385, -5.496995163, -5.590290941,
+    -5.68358672, -5.776882498, -5.870178276, -5.963474054, -6.056769833,
+    -6.150065611, -6.243361389, -6.336657167, -6.429952946, -6.523248724,
+    -6.616544502, -6.70984028, -6.803136059, -6.896431837, -6.989727615,
+    -7.083023393, -7.176319172, -7.26961495, -7.362910728, -7.456206506,
+    -7.549502285, -7.642798063, -7.736093841, -7.829389619, -7.922685397,
+    -8.015981176, -8.109276954, -8.202572732, -8.29586851, -8.389164289,
+    -8.482460067, -8.575755845, -8.669051623, -8.762347402, -8.85564318,
+    -8.948938958, -9.042234736, -9.135530515, -9.228826293, -9.322122071,
+    -9.415417849, -9.508713628, -9.602009406, -9.695305184, -9.788600962,
+    -9.881896741, -9.975192519, -10.0684883, -10.16178408, -10.25507985,
+    -10.34837563, -10.44167141, -10.53496719, -10.62826297, -10.72155874,
+    -10.81485452, -10.9081503, -11.00144608, -11.09474186, -11.18803764,
+    -11.28133341, -11.37462919, -11.46792497, -11.56122075, -11.65451653,
+    -11.74781231, -11.84110808, -11.93440386, -12.02769964, -12.12099542,
+    -12.2142912, -12.30758697, -12.40088275, -12.49417853, -12.58747431,
+    -12.68077009, -12.77406587, -12.86736164, -12.96065742, -13.0539532,
+    -13.14724898, -13.24054476
+  ],
+  "sample": [
+    1.499352762, 1.563569124, 1.604556811, 1.662015517, 1.718455035,
+    1.77182963, 1.81184659, 1.904377399, 1.959939776, 1.993438186,
+    2.061298108, 2.115056122, 2.172348374, 2.196167841, 2.289377213,
+    2.365520319, 2.450593449, 2.472630428, 2.520442612, 2.558077529,
+    2.592764516, 2.627348042, 2.671546396, 2.678692044, 2.667668091,
+    2.686888397, 2.675938622, 2.669145898, 2.636676989, 2.627173451,
+    2.586017437, 2.58387751, 2.538613603, 2.468934738, 2.397576586,
+    2.342153388, 2.26930446, 2.190208354, 2.135920708, 2.047123499,
+    1.971462807, 1.899199346, 1.826847573, 1.765328901, 1.703779497,
+    1.626773155, 1.579616587, 1.53009061, 1.452935524, 1.39092497,
+    1.341991045, 1.315394888, 1.266198434, 1.255893688, 1.244018374,
+    1.206508629, 1.223931982, 1.2208723, 1.228432413, 1.260281337,
+    1.299091088, 1.33031355, 1.375771493, 1.402745141, 1.481311815,
+    1.488314026, 1.573695165, 1.632634484, 1.685580479, 1.792702738,
+    1.848736981, 1.926447513, 1.991153861, 2.045555917, 2.132363517,
+    2.226205331, 2.283551709, 2.351463797, 2.413205406, 2.498456148,
+    2.509137604, 2.55911012, 2.611593188, 2.622540156, 2.661792435,
+    2.68947026, 2.685215694, 2.684130413, 2.690088968, 2.668764239,
+    2.638196672, 3.635818598, 21.594567815, 2.563617707, 2.530851759,
+    2.467309351, 3.415609167, 22.340443766, 2.277869032, 2.229844961,
+    2.152245161, 10.056326387, 13.987778588, 1.926448896, 1.852005234,
+    1.756459796, 12.70521524, 19.637895902, 1.578133512, 1.514824788,
+    1.450239396, 13.402785392, 19.347794147, 1.246741085, 1.185929436,
+    1.098200124, 15.033386271, 30.980312622, 0.896004516, 0.849304534,
+    0.780958012, 10.712270798, 40.620982714, 0.561999653, 0.487737961,
+    0.433345494, 0.372621498, 50.295732925, 0.218530056, 0.146224802,
+    0.087812643, 0.000534622, -0.0504317, -0.133500388, -0.186706414,
+    -0.263079689, -0.333911377, -0.407442275, -0.47071302, -0.53014277,
+    -0.5938238, -0.667556343, -0.727740377, -0.784546034, -0.881740989,
+    -0.949113165, -1.03001333, -1.072264062, -1.139735784, -1.229959632,
+    -1.28367018, -1.346234299, -1.424700543, -1.487047829, -1.562331931,
+    -1.644807229, -1.690703625, -1.75650446, -1.830968924, -1.916417325,
+    -1.982942566, -3.05529347, -2.104847834, -2.16842213, -2.245419582,
+    -2.308817507, -3.395457692, -2.45388108, -2.537596828, -2.600174343,
+    -2.652228218, -3.731969317, -2.786037971, -2.861310609, -2.907904405,
+    -3.00286939, -4.086429516, -3.141269178, -3.219112456, -3.268268918,
+    -3.346179336, -4.416530273, -3.484957297, -3.544870983, -3.625357431,
+    -3.68162073, -4.747493934, -3.829929481, -3.904326948, -3.968754554,
+    -4.025082226, -4.099816948, -4.162999406, -4.220229199, -4.304107455,
+    -4.383064779, -4.432959593, -4.511578638, -4.571926193, -4.638547097,
+    -4.727357582, -4.772505874, -4.845833118, -4.9294818, -4.988956683,
+    -5.057987518, -5.128878693, -5.188957289, -5.251861284, -5.334720201,
+    -5.390042871, -5.462028076, -5.538145558, -5.607265129, -5.689111011,
+    -5.761151459, -5.813051965, -5.8918199, -5.952215391, -6.025724075,
+    -6.106820831, -6.153921239, -6.230198021, -6.293809134, -6.372100742,
+    -6.43507613, -6.484682575, -6.567559284, -6.631907449, -6.718670348,
+    -6.750629689, -6.824644329, -6.898002532, -6.971907647, -7.048602286,
+    -7.112891398, -7.175390361, -7.260714675, -7.327432385, -7.408237133,
+    -7.46782242, -7.512049631, -7.600563539, -7.668957957, -7.731160237,
+    -7.819018592, -7.862000922, -7.92734909, -8.004798615, -8.060616488,
+    -8.158956735, -8.195809671, -8.290112663, -8.364162866, -8.422296007,
+    -8.469760451, -8.557233341, -8.634923256, -8.707105183, -8.763765363,
+    -8.851222213, -8.912832946, -8.952958753, -9.023715211, -9.10679039,
+    -9.178721336, -9.242038019
+  ]
+}
+
+
+### C-3. Classification 單一預測（水果種類分類）
+# 回傳: { "model_id": "...", "model_name": "...", "task_category": "classification", "value": 0, "detail": {"proba": [...]}, "applied": [...] }
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+{
+  "model_name": "SVM_2d423e9c",
+  "white": [
+    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+
+  ],
+  "sample": [
+    0.153485342,0.171352921,0.18543525,0.19354921,0.197741634,0.19981386,0.200075888,0.1986447,0.195801693,0.191816566,0.186995152,0.181482213,0.175373474,0.168936923,0.162353754,0.155519827,0.148809861,0.142398259,0.136408273,0.131126463,0.126665514,0.123001725,0.120222985,0.118390101,0.117540374,0.117753137,0.11905829,0.121423011,0.124753373,0.128878497,0.13361551,0.138710187,0.144090634,0.15023511,0.158126933,0.16891062,0.185855392,0.211738429,0.243355305,0.275739239,0.302451116,0.320303993,0.331120415,0.337766799,0.341956224,0.345121075,0.348468642,0.351990804,0.354793907,0.356287675,0.356455861,0.355616338,0.353806784,0.350840705,0.347050233,0.343008117,0.339160658,0.335713884,0.332509641,0.329556044,0.326944113,0.324874565,0.323499376,0.323000783,0.323529406,0.325188657,0.32794424,0.331961832,0.337435093,0.344577696,0.353411422,0.36412036,0.37689948,0.391698786,0.408635126,0.427405058,0.447317291,0.467659524,0.487562694,0.506944127,0.526616521,0.546217952,0.565067231,0.583290868,0.604906293,0.63574142,0.684852866,0.746568992,0.815274844,0.890826186,0.95902479,1.013887686,1.055256793,1.084338544,1.105538748,1.120893872,1.132386187,1.140452521,1.144841767,1.147631917,1.148760555,1.148337395,1.145840865,1.141105423,1.133462975,1.122158441,1.109071625,1.094718734,1.079025561,1.063064845,1.047083861,1.030511379,1.013544215,0.99697414,0.980369743,0.964055396,0.947926646,0.93215556,0.916951907,0.902226755,0.888007331,0.874223863,0.86139495,0.849075488,0.837319485,0.826238048,0.815507958,0.805525728,0.796019823,0.786730652,0.778026012,0.769598337,0.7615953,0.754470237,0.747607403,0.741194154,0.735348415,0.729999283,0.72517255,0.720859364,0.71721277
+
+
+
+
+
+
+
+
+  ]
+}
+
+### C-3-1. Regression 單一預測（20220727 NIR分析豆渣實驗值對照表.csv）
+# 使用 CSV 的 row[1] 當 white、row[2] 當 sample（僅保留有效數值）
+# model_name 請先執行 C-1 後，填入可用名稱
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+< test/predict_payload_row1_white_row2_sample.json
+
+### C-4. 錯誤測試：predict 缺少必要欄位
+# 預期 400 + detail
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+{
+  "model_name": "PLS_Water_SNV_v1"
+}
+
+### C-5. 錯誤測試：predict 使用不存在的 model_name
+# 預期 404
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+{
+  "model_name": "NONEXISTENT_MODEL_XYZ",
+  "white": [1.0, 1.0, 1.0],
+  "sample": [1.0, 1.0, 1.0]
+}
+
+### C-6. 錯誤測試：predict white 與 sample 長度不一致
+# 預期 400
+POST {{baseUrl}}/api/modeling/predict
+Content-Type: application/json
+
+{
+  "model_name": "PLS_Water_SNV_v1",
+  "white": [1.0, 1.0, 1.0],
+  "sample": [1.0, 1.0]
+}
+
+# ============================================================
+# [BLOCK D] 預設模型群組 Pipeline (Default Model Group)
+# 全域唯一群組：建立新群組會自動覆蓋（軟刪除）舊群組
+# Regression / Classification 模型可混用，各自使用關聯的 preprocessing
+# 流程: 查詢 -> 建立混合群組 -> 查詢詳情 -> 批次預測 -> 覆蓋更新 -> 刪除 -> 錯誤情境
+# ============================================================
+
+### D-1. 列出 Active 預設模型群組
+GET {{baseUrl}}/api/default-models/
+
+#### D-2. 列出所有已訓練模型（供 UI 選擇 model_id 同C-1）
+GET {{baseUrl}}/api/modeling/models/names/all
+
+### D-3. 建立混合預設模型群組（Reg + Cls 共存）
+# model_set: [{model_id, item_name}, ...]
+# - 不限 task_category，reg/cls 可混用
+# - 若含 cls 模型，回傳中會附上 cls_class_maps
+# - 建立時自動軟刪除現有的所有 active 群組（全域唯一）
+# 回傳: { group_id, name, model_count, cls_class_maps? }
+POST {{baseUrl}}/api/default-models/
+Content-Type: application/json
+
+{
+  "name": "豆皮群組 v1",
+  "description": "Water 回歸 + 分類，混合群組",
+  "model_set": [
+    { "model_id": "{{regModelId1}}", "item_name": "Water" },
+    { "model_id": "{{clsModelId1}}", "item_name": "Type" }
+  ]
+}
+
+###
+@groupId = 69eb1c5df5e807e63305de14
+
+### D-4. 查詢目前預設群組，取得 group_id
+# 全域唯一群組，回傳陣列第一筆的 id 即為目前的 group_id
+# 將回傳的 id 貼入 @groupId 變數供後續使用
+GET {{baseUrl}}/api/default-models/
+
+### D-5. 查詢群組詳情（含各模型指標、instrument_config、preprocessing）
+# 若含 cls 模型可看到 accuracy；reg 模型可看到 r_squared/rmse
+GET {{baseUrl}}/api/default-models/{{groupId}}
+
+### D-6. 批次預測（多樣本，含 label）—— 141 features
+# - white + samples[].spectra 長度需一致（141 features）
+# - label 可選（不影響推論，僅用於回傳識別）
+# - reg 模型回傳 predicted_value (float)
+# - cls 模型回傳 predicted_class (最大機率類別)
+POST {{baseUrl}}/api/default-models/{{groupId}}/predict
+Content-Type: application/json
+
+{
+  "white": [
+    1.373571062, 1.45100402, 1.528436977, 1.605869935, 1.683302893,
+    1.76073585, 1.838168808, 1.915601766, 1.993034724, 2.070467681,
+    2.147900639, 2.225333597, 2.302766554, 2.354725766, 2.461016706,
+    2.54793395, 2.637007149, 2.696460804, 2.765226282, 2.825118036,
+    2.873475062, 2.899475722, 2.96855431, 2.990887551, 2.981138586,
+    2.995593693, 2.985753808, 2.969323339, 2.928186132, 2.906832757,
+    2.873341122, 2.838352981, 2.753809059, 2.680553131, 2.596715444,
+    2.51227044, 2.43886709, 2.339045357, 2.233095061, 2.130109729,
+    2.038151763, 1.933471471, 1.838415138, 1.737485061, 1.647634986,
+    1.538684069, 1.474422798, 1.408922871, 1.317021893, 1.238301847,
+    1.183750364, 1.112070229, 1.062505482, 1.051648528, 1.013849924,
+    0.991082694, 0.991209686, 0.994370409, 1.022817059, 1.053066304,
+    1.091607601, 1.136509466, 1.18884606, 1.241300532, 1.306926868,
+    1.374871443, 1.483959824, 1.559569217, 1.650097684, 1.762378856,
+    1.840522452, 1.958309529, 2.053894343, 2.140998399, 2.249523439,
+    2.356364428, 2.447410342, 2.542748364, 2.614134941, 2.721208956,
+    2.748006466, 2.815229088, 2.872260545, 2.903437046, 2.963450228,
+    2.987745908, 2.99460852, 2.994644818, 2.980414654, 2.9727017,
+    2.963263948, 2.919193721, 2.87314292, 2.829577707, 2.774890804,
+    2.696844369, 2.621304914, 2.549463243, 2.449623414, 2.352332524,
+    2.266090856, 2.158083483, 2.056623988, 1.972077299, 1.855872657,
+    1.733132169, 1.666480724, 1.565847238, 1.478073484, 1.401947902,
+    1.318354553, 1.251693189, 1.166499718, 1.033709314, 0.940413535,
+    0.847117757, 0.753821979, 0.660526201, 0.567230422, 0.473934644,
+    0.380638866, 0.287343088, 0.194047309, 0.100751531, 0.007455753,
+    -0.085840025, -0.179135804, -0.272431582, -0.36572736, -0.459023138,
+    -0.552318917, -0.645614695, -0.738910473, -0.832206251, -0.925502029,
+    -1.018797808, -1.112093586, -1.205389364, -1.298685142, -1.391980921,
+    -1.485276699
+  ],
+  "samples": [
+    {
+      "label": "Sample_A",
+      "spectra": [
+        2.081282041, 2.161013121, 2.249580745, 2.33392075, 2.425482103,
+        2.488611108, 2.589284951, 2.649868674, 2.751714156, 2.828571141,
+        2.893230663, 2.98740442, 3.065790447, 3.127561499, 3.231590124,
+        3.322759007, 3.43381329, 3.482071431, 3.564116444, 3.616998763,
+        3.687108565, 3.691182297, 3.764949239, 3.809977311, 3.779962641,
+        3.815724697, 3.79821608, 3.770358254, 3.710224899, 3.705560451,
+        3.671316447, 3.644934668, 3.559650678, 3.459369265, 3.385482274,
+        3.295732905, 3.221109884, 3.109693626, 2.973125161, 2.881977969,
+        2.774630494, 2.673349321, 2.584550935, 2.470960103, 2.384276245,
+        2.260879898, 2.17645357, 2.094891617, 2.024303877, 1.937345264,
+        1.871968104, 1.788852318, 1.746043038, 1.739952629, 1.708543574,
+        1.679670232, 1.693999024, 1.670908181, 1.720187791, 1.743871357,
+        1.791144007, 1.827364266, 1.897848554, 1.945611116, 2.005334974,
+        2.083933775, 2.197136951, 2.284462688, 2.363604525, 2.493967087,
+        2.580934721, 2.701998618, 2.816321721, 2.902798921, 3.00986604,
+        3.125207195, 3.222376106, 3.324375121, 3.377653762, 3.506241211,
+        3.522779322, 3.62156687, 3.668547777, 3.700225602, 3.774655582,
+        3.795629715, 3.787384727, 3.798000443, 3.780294097, 3.758035679,
+        3.758587655, 3.717003268, 3.668940825, 3.60915087, 3.577599521,
+        3.482443642, 3.403875844, 3.331456761, 3.213881396, 3.123335781,
+        3.023807994, 2.904178722, 2.811476324, 2.731159374, 2.600479322,
+        2.472530498, 2.387538703, 2.270240478, 2.208202739, 2.133261692,
+        2.039654581, 1.950302441, 1.851930074, 1.71225067, 1.607309369,
+        1.524312107, 1.442681871, 1.326447663, 1.232126716, 1.144098655,
+        1.02754093, 0.953176396, 0.853981223, 0.733988364, 0.630763333,
+        0.544750254, 0.435541821, 0.328690717, 0.254307854, 0.154899139,
+        0.045528979, -0.067415586, -0.165843003, -0.25123625, -0.356068054,
+        -0.453241076, -0.538371317, -0.640019957, -0.732331125, -0.854779587,
+        -0.947066072
+      ]
+    },
+    {
+      "label": "Sample_B",
+      "spectra": [
+        2.081282041, 2.161013121, 2.249580745, 2.33392075, 2.425482103,
+        2.488611108, 2.589284951, 2.649868674, 2.751714156, 2.828571141,
+        2.893230663, 2.98740442, 3.065790447, 3.127561499, 3.231590124,
+        3.322759007, 3.43381329, 3.482071431, 3.564116444, 3.616998763,
+        3.687108565, 3.691182297, 3.764949239, 3.809977311, 3.779962641,
+        3.815724697, 3.79821608, 3.770358254, 3.710224899, 3.705560451,
+        3.671316447, 3.644934668, 3.559650678, 3.459369265, 3.385482274,
+        3.295732905, 3.221109884, 3.109693626, 2.973125161, 2.881977969,
+        2.774630494, 2.673349321, 2.584550935, 2.470960103, 2.384276245,
+        2.260879898, 2.17645357, 2.094891617, 2.024303877, 1.937345264,
+        1.871968104, 1.788852318, 1.746043038, 1.739952629, 1.708543574,
+        1.679670232, 1.693999024, 1.670908181, 1.720187791, 1.743871357,
+        1.791144007, 1.827364266, 1.897848554, 1.945611116, 2.005334974,
+        2.083933775, 2.197136951, 2.284462688, 2.363604525, 2.493967087,
+        2.580934721, 2.701998618, 2.816321721, 2.902798921, 3.00986604,
+        3.125207195, 3.222376106, 3.324375121, 3.377653762, 3.506241211,
+        3.522779322, 3.62156687, 3.668547777, 3.700225602, 3.774655582,
+        3.795629715, 3.787384727, 3.798000443, 3.780294097, 3.758035679,
+        3.758587655, 3.717003268, 3.668940825, 3.60915087, 3.577599521,
+        3.482443642, 3.403875844, 3.331456761, 3.213881396, 3.123335781,
+        3.023807994, 2.904178722, 2.811476324, 2.731159374, 2.600479322,
+        2.472530498, 2.387538703, 2.270240478, 2.208202739, 2.133261692,
+        2.039654581, 1.950302441, 1.851930074, 1.71225067, 1.607309369,
+        1.524312107, 1.442681871, 1.326447663, 1.232126716, 1.144098655,
+        1.02754093, 0.953176396, 0.853981223, 0.733988364, 0.630763333,
+        0.544750254, 0.435541821, 0.328690717, 0.254307854, 0.154899139,
+        0.045528979, -0.067415586, -0.165843003, -0.25123625, -0.356068054,
+        -0.453241076, -0.538371317, -0.640019957, -0.732331125, -0.854779587,
+        -0.947066072
+      ]
+    }
+  ]
+}
+
+### D-7. 群組預測（單樣本，不含 label）
+# label 省略時，回傳中 label 欄位為 null
+POST {{baseUrl}}/api/default-models/{{groupId}}/predict
+Content-Type: application/json
+
+{
+  "white": [
+    1.373571062, 1.45100402, 1.528436977, 1.605869935, 1.683302893,
+    1.76073585, 1.838168808, 1.915601766, 1.993034724, 2.070467681,
+    2.147900639, 2.225333597, 2.302766554, 2.354725766, 2.461016706,
+    2.54793395, 2.637007149, 2.696460804, 2.765226282, 2.825118036,
+    2.873475062, 2.899475722, 2.96855431, 2.990887551, 2.981138586,
+    2.995593693, 2.985753808, 2.969323339, 2.928186132, 2.906832757,
+    2.873341122, 2.838352981, 2.753809059, 2.680553131, 2.596715444,
+    2.51227044, 2.43886709, 2.339045357, 2.233095061, 2.130109729,
+    2.038151763, 1.933471471, 1.838415138, 1.737485061, 1.647634986,
+    1.538684069, 1.474422798, 1.408922871, 1.317021893, 1.238301847,
+    1.183750364, 1.112070229, 1.062505482, 1.051648528, 1.013849924,
+    0.991082694, 0.991209686, 0.994370409, 1.022817059, 1.053066304,
+    1.091607601, 1.136509466, 1.18884606, 1.241300532, 1.306926868,
+    1.374871443, 1.483959824, 1.559569217, 1.650097684, 1.762378856,
+    1.840522452, 1.958309529, 2.053894343, 2.140998399, 2.249523439,
+    2.356364428, 2.447410342, 2.542748364, 2.614134941, 2.721208956,
+    2.748006466, 2.815229088, 2.872260545, 2.903437046, 2.963450228,
+    2.987745908, 2.99460852, 2.994644818, 2.980414654, 2.9727017,
+    2.963263948, 2.919193721, 2.87314292, 2.829577707, 2.774890804,
+    2.696844369, 2.621304914, 2.549463243, 2.449623414, 2.352332524,
+    2.266090856, 2.158083483, 2.056623988, 1.972077299, 1.855872657,
+    1.733132169, 1.666480724, 1.565847238, 1.478073484, 1.401947902,
+    1.318354553, 1.251693189, 1.166499718, 1.033709314, 0.940413535,
+    0.847117757, 0.753821979, 0.660526201, 0.567230422, 0.473934644,
+    0.380638866, 0.287343088, 0.194047309, 0.100751531, 0.007455753,
+    -0.085840025, -0.179135804, -0.272431582, -0.36572736, -0.459023138,
+    -0.552318917, -0.645614695, -0.738910473, -0.832206251, -0.925502029,
+    -1.018797808, -1.112093586, -1.205389364, -1.298685142, -1.391980921,
+    -1.485276699
+  ],
+  "samples": [
+    {
+      "spectra": [
+        2.081282041, 2.161013121, 2.249580745, 2.33392075, 2.425482103,
+        2.488611108, 2.589284951, 2.649868674, 2.751714156, 2.828571141,
+        2.893230663, 2.98740442, 3.065790447, 3.127561499, 3.231590124,
+        3.322759007, 3.43381329, 3.482071431, 3.564116444, 3.616998763,
+        3.687108565, 3.691182297, 3.764949239, 3.809977311, 3.779962641,
+        3.815724697, 3.79821608, 3.770358254, 3.710224899, 3.705560451,
+        3.671316447, 3.644934668, 3.559650678, 3.459369265, 3.385482274,
+        3.295732905, 3.221109884, 3.109693626, 2.973125161, 2.881977969,
+        2.774630494, 2.673349321, 2.584550935, 2.470960103, 2.384276245,
+        2.260879898, 2.17645357, 2.094891617, 2.024303877, 1.937345264,
+        1.871968104, 1.788852318, 1.746043038, 1.739952629, 1.708543574,
+        1.679670232, 1.693999024, 1.670908181, 1.720187791, 1.743871357,
+        1.791144007, 1.827364266, 1.897848554, 1.945611116, 2.005334974,
+        2.083933775, 2.197136951, 2.284462688, 2.363604525, 2.493967087,
+        2.580934721, 2.701998618, 2.816321721, 2.902798921, 3.00986604,
+        3.125207195, 3.222376106, 3.324375121, 3.377653762, 3.506241211,
+        3.522779322, 3.62156687, 3.668547777, 3.700225602, 3.774655582,
+        3.795629715, 3.787384727, 3.798000443, 3.780294097, 3.758035679,
+        3.758587655, 3.717003268, 3.668940825, 3.60915087, 3.577599521,
+        3.482443642, 3.403875844, 3.331456761, 3.213881396, 3.123335781,
+        3.023807994, 2.904178722, 2.811476324, 2.731159374, 2.600479322,
+        2.472530498, 2.387538703, 2.270240478, 2.208202739, 2.133261692,
+        2.039654581, 1.950302441, 1.851930074, 1.71225067, 1.607309369,
+        1.524312107, 1.442681871, 1.326447663, 1.232126716, 1.144098655,
+        1.02754093, 0.953176396, 0.853981223, 0.733988364, 0.630763333,
+        0.544750254, 0.435541821, 0.328690717, 0.254307854, 0.154899139,
+        0.045528979, -0.067415586, -0.165843003, -0.25123625, -0.356068054,
+        -0.453241076, -0.538371317, -0.640019957, -0.732331125, -0.854779587,
+        -0.947066072
+      ]
+    }
+  ]
+}
+
+### D-8. 覆蓋建立新群組（只含 Reg 模型）
+# 直接 POST 即可，舊群組自動軟刪除，不需要手動 DELETE
+# 回傳: { group_id, name, model_count }（無 cls_class_maps，因全是 reg 模型）
+POST {{baseUrl}}/api/default-models/
+Content-Type: application/json
+
+{
+  "name": "生產線A 預設群組 v2",
+  "description": "僅含回歸模型，更新版",
+  "model_set": [
+    { "model_id": "{{regModelId1}}", "item_name": "Water" }
+  ]
+}
+
+###
+@groupIdV2 = 69e8b5d0740ebe7922bb76d0
+
+### D-9. 確認新群組已建立（查詢 v2）
+#GET {{baseUrl}}/api/default-models/{{groupIdV2}}
+
+### D-10. 確認舊群組已停用（查詢 D-3 的 groupId，應回傳 404）
+#GET {{baseUrl}}/api/default-models/{{groupId}}
+
+### D-11. 軟刪除群組
+#DELETE {{baseUrl}}/api/default-models/{{groupIdV2}}
+
+# ── D-12. 錯誤情境測試 ──────────────────────────────────────
+
+### D-12-1. 錯誤：model_set 為空陣列
+# 預期 400 + error_message
+POST {{baseUrl}}/api/default-models/
+Content-Type: application/json
+
+{
+  "name": "Bad Group - Empty",
+  "model_set": []
+}
+
+### D-12-2. 錯誤：model_id 不存在
+# 預期 404 + error_message
+POST {{baseUrl}}/api/default-models/
+Content-Type: application/json
+
+{
+  "name": "Bad Group - Invalid Model",
+  "model_set": [
+    { "model_id": "000000000000000000000000", "item_name": "Ghost" }
+  ]
+}
+
+### D-12-3. 錯誤：predict 使用不存在的群組 ID
+# 預期 404 + error_message
+POST {{baseUrl}}/api/default-models/000000000000000000000000/predict
+Content-Type: application/json
+
+{
+  "white": [1.0, 1.0],
+  "samples": [{ "spectra": [1.0, 1.0] }]
+}
+
+### D-12-4. 錯誤：white 與 spectra 長度不一致
+# 預期 400 + error_message（white=3 點，spectra=2 點）
+#POST {{baseUrl}}/api/default-models/{{groupIdV2}}/predict
+#Content-Type: application/json
+#
+#{
+#  "white": [1.0, 1.0, 1.0],
+#  "samples": [{ "label": "test", "spectra": [1.0, 1.0] }]
+#}
+
+# ============================================================
+# [BLOCK E] Task 狀態管理 & WebSocket
+# ============================================================
+
+### E-1. 查詢目前 Task 狀態（idle / running / completed / error）
+GET {{baseUrl}}/api/task/status
+
+### E-2. 重置 Task Lock（當有任務卡住時使用）
+POST {{baseUrl}}/api/task/reset
+
+### E-3. 重置後確認狀態為 idle
+GET {{baseUrl}}/api/task/status
+
+# ============================================================
+# [BLOCK F] 清理測試資料 (可選)
+# ============================================================
+
+### F-1. 刪除 Regression 測試檔案（連同 SpectralData、GridFS）
+DELETE {{baseUrl}}/api/upload/{{regFileId}}
+
+### F-2. 刪除 Classification 測試檔案
+DELETE {{baseUrl}}/api/upload/{{clsFileId}}
+
