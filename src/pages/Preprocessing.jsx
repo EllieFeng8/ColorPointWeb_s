@@ -968,7 +968,7 @@ export default function Preprocessing() {
                             <div className="space-y-1">
                               <div className="flex items-center justify-between gap-2">
                                 <label className="text-[10px] font-bold text-slate-400 uppercase">n_iters</label>
-                                <span className="text-[10px] font-medium text-amber-500">{`1≤n_iters≤≤${maxSgWindowSize} (奇數)`}</span>
+                                <span className="text-[10px] font-medium text-amber-500">{`1≤n_iters≤${maxSgWindowSize} (奇數)`}</span>
                               </div>
                               <input
                                 value={carsIterations}

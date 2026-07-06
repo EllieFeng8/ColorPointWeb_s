@@ -2,6 +2,7 @@
 
 @theme {
   --color-primary: #82b091;
+  --color-primary-light: #9cc0a8;
   --color-primary-dark: #659475;
   --color-background-main: #FFFFFF;
   --color-background-sidebar: #F9FAFB;
@@ -9,6 +10,9 @@
   --color-text-body: #374151;
 
   --font-display: "Space Grotesk", sans-serif;
+
+  /* soft card elevation referenced across pages via the `shadow-subtle` class */
+  --shadow-subtle: 0 1px 3px rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.05);
 }
 
 @layer base {

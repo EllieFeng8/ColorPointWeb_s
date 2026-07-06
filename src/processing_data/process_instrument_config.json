@@ -1,0 +1,15 @@
+{
+  "height_cm": 15.0,
+  "integration_time_us": 60.0,
+  "average_count": 7,
+  "white_ref": {
+    "height_cm": 100.0,
+    "integration_time_us": 60.0,
+    "average_count": 5,
+    "raw_samples": [
+      {"height_cm": 110.0, "intensity": 1000.0},
+      {"height_cm": 111.0, "intensity": 1500.0},
+      {"height_cm": 112.0, "intensity": 2000.0}
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, Boxes, FlaskConical } from 'lucide-react';
+import { FileUp, SlidersHorizontal, Cpu, FileText, LoaderCircle, Boxes, FlaskConical, Waves } from 'lucide-react';
 import logoAeyeot from '@/src/image/onlyLogoW_big 3.png';
 import { useTraining } from '../context/TrainingContext.jsx';
 
@@ -15,6 +15,7 @@ export default function NavBar() {
   const isEvaluatioClassify = pathname.startsWith('/evaluatioclassify');
   const isPrediction = pathname.startsWith('/prediction');
   const isMachineModelSetting = pathname.startsWith('/machinemodelsetting');
+  const isTimeseries = pathname.startsWith('/timeseries');
 
   return (
     <aside className="w-72 flex-shrink-0 border-r border-slate-100 bg-[#F9FAFB] flex flex-col">
@@ -80,6 +81,13 @@ export default function NavBar() {
           >
               <Boxes size={20} />
               <span className="text-sm font-semibold">機台模型設定</span>
+          </NavLink>
+          <NavLink
+              to="/timeseries"
+              className={navItemClass(isTimeseries)}
+          >
+              <Waves size={20} />
+              <span className="text-sm font-semibold">時間序列分析</span>
           </NavLink>
 
 

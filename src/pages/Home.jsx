@@ -15,7 +15,8 @@ const allowedExtensions = ['.csv', '.json'];
 const requiredExtensions = ['.csv', '.json'];
 const taskCategoryOptions = [
   { value: 'regression', label: '回歸模型', description: '適用於連續數值預測' },
-  { value: 'classification', label: '分類模型', description: '適用於類別標籤判斷' }
+  { value: 'classification', label: '分類模型', description: '適用於類別標籤判斷' },
+  { value: 'timeseries', label: '時間序列模型', description: '異常偵測 / 變點偵測 / 預測（獨立流程）' }
 ];
 const referenceDownloads = [
   { label: '下載回歸範例 CSV', href: regressionReferenceCsvUrl, fileName: 'sample_data.csv' },
@@ -190,6 +191,7 @@ export default function Home() {
   const hasTaskCategoryMismatch = files.some(
     (file) => file.status === 'uploaded' && file.uploadedTaskCategory && file.uploadedTaskCategory !== taskCategory
   );
+  const isTimeseries = taskCategory === 'timeseries';
   const preprocessingFileId = getPreprocessingFileId(selectedCsvFile);
   const canProceed =
     selectedCsvFile?.status === 'uploaded' &&
@@ -520,6 +522,12 @@ export default function Home() {
   };
 
   const handlePrimaryAction = async () => {
+    if (isTimeseries) {
+      // 時間序列為獨立子系統，序列輸入在分析頁進行，不走 csv+json 上傳流程。
+      navigate('/timeseries', { state: { taskCategory } });
+      return;
+    }
+
     if (missingRequiredFiles.length > 0) {
       await swal(
         '缺少必要檔案',
@@ -607,12 +615,13 @@ export default function Home() {
                   transition={{ delay: 0.1 }}
                   className="text-slate-500 text-lg"
               >
-                請上傳 .csv 與 .json 各一份，並選擇回歸或分類模型後送出
+                請選擇模型任務類型後送出（回歸／分類需上傳 .csv 與 .json 各一份；時間序列為獨立流程）
               </motion.p>
             </div>
           </header>
 
           <section className="space-y-6">
+            {!isTimeseries && (
             <div className="rounded-2xl border border-slate-100 bg-white px-6 py-5 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
@@ -636,6 +645,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            )}
 
             <div className="rounded-2xl border border-slate-100 bg-white px-6 py-5 shadow-sm">
               <div className="space-y-4">
@@ -643,7 +653,7 @@ export default function Home() {
                   <h3 className="text-lg font-bold text-[#111827]">模型任務類型</h3>
 
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   {taskCategoryOptions.map((option) => (
                     <label
                       key={option.value}
@@ -671,6 +681,17 @@ export default function Home() {
               </div>
             </div>
 
+            {isTimeseries ? (
+              <div className="rounded-2xl border border-[#82b091]/30 bg-[#82b091]/10 px-6 py-6 text-sm text-slate-600 space-y-2">
+                <h3 className="text-lg font-bold text-[#4f7960]">時間序列為獨立分析流程</h3>
+                <p>
+                  時間序列（異常偵測 / 變點偵測 / 預測）不走 .csv + .json 上傳流程。
+                  序列輸入、格式檢查與（選用的）前處理，都在「時間序列分析」頁進行。
+                </p>
+                <p className="text-slate-500">點擊下方「前往時間序列分析」即可開始。</p>
+              </div>
+            ) : (
+            <>
             {hasPendingSelection && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-medium text-amber-700">
                 尚缺 {missingRequiredFiles.map(getRequirementLabel).join('、')}，請補齊後才可進入下一步。
@@ -723,8 +744,11 @@ export default function Home() {
                 </button>
               </div>
             </motion.div>
+            </>
+            )}
           </section>
 
+          {!isTimeseries && (
           <section className="space-y-6">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <h3 className="text-2xl font-bold flex items-center gap-3 text-[#111827]">
@@ -838,11 +862,12 @@ export default function Home() {
               </div>
             </div>
           </section>
+          )}
 
           <Footer
-            primaryLabel="下一步：資料前處理"
+            primaryLabel={isTimeseries ? '前往時間序列分析' : '下一步：資料前處理'}
             onPrimaryClick={handlePrimaryAction}
-            primaryDisabled={hasUploadingFiles}
+            primaryDisabled={!isTimeseries && hasUploadingFiles}
             secondaryLabel="取消"
             onSecondaryClick={resetForm}
           />
